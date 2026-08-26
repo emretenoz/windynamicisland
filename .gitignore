@@ -1,5 +1,6 @@
 bin/
 obj/
+release/
 .verify-build/
 .latest-build/
 .polished-build/

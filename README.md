@@ -1,0 +1,38 @@
+# WinDynamicIsland
+
+A lightweight Windows Dynamic Island-style WPF widget for media, notifications, screenshots, timers, audio controls, and privacy indicators.
+
+## Features
+
+- Media detection through Windows GSMTC, with album art and playback controls on hover.
+- Notification previews with app logos.
+- Screenshot previews directly inside the island.
+- Timer presets, custom timer dialog, compact countdown, and hover progress view.
+- Mouse wheel volume control and audio output switching.
+- Camera and microphone privacy dots.
+- Fullscreen auto-hide animation.
+- Modern context menu and settings panel.
+- Optional start with Windows.
+
+## Requirements
+
+- Windows 10 19041 or newer.
+- .NET 8 Desktop Runtime.
+
+## Build
+
+```powershell
+dotnet build -c Release
+```
+
+## Publish
+
+```powershell
+dotnet publish -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o release
+```
+
+Run `release\WinDynamicIsland.exe`.
+
+## Settings
+
+Right-click the island and open `Settings` to toggle notifications, weather, screenshot preview, timer controls, and start with Windows.
