@@ -40,6 +40,7 @@ public partial class MainWindow : Window
     private readonly HashSet<GlobalSystemMediaTransportControlsSession> _observedMediaSessions = new();
     private CoreAudioController? _audioController;
     private CoreAudioDevice? _defaultPlaybackDevice;
+    private IslandSettings _settings = IslandSettings.Load();
     private UserNotificationListener? _notificationListener;
     private CancellationTokenSource? _notificationCollapseCts;
     private CancellationTokenSource? _utilityCollapseCts;
@@ -80,10 +81,16 @@ public partial class MainWindow : Window
         InitializeAudio();
         StartFullscreenWatcher();
         StartPrivacyWatcher();
-        StartWeatherWatcher();
+        if (_settings.WeatherEnabled)
+        {
+            StartWeatherWatcher();
+        }
         await InitializeMediaAsync();
         TransitionTo(IslandState.MediaCompact);
-        await InitializeNotificationsAsync();
+        if (_settings.NotificationsEnabled)
+        {
+            await InitializeNotificationsAsync();
+        }
     }
 
     private void Window_Closed(object? sender, EventArgs e)
@@ -415,6 +422,11 @@ public partial class MainWindow : Window
 
             if (Clipboard.ContainsImage())
             {
+                if (!_settings.ScreenshotPreviewEnabled)
+                {
+                    return;
+                }
+
                 var image = Clipboard.GetImage();
                 _clipboardHistory.Insert(0, "[Gorsel]");
                 if (_clipboardHistory.Count > 5)
@@ -587,6 +599,11 @@ public partial class MainWindow : Window
     private async Task TryShowNotificationAsync(UserNotification notification)
     {
         var preview = await ParseNotificationAsync(notification);
+        if (!_settings.NotificationsEnabled)
+        {
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(preview.Message))
         {
             return;
@@ -743,7 +760,7 @@ public partial class MainWindow : Window
 
     private async Task ShowIdleWeatherAsync()
     {
-        if (_state is not IslandState.MediaCompact || _isMediaActive || _isCameraActive || _isMicrophoneActive || _isHovering)
+        if (_state is not IslandState.MediaCompact || _isMediaActive || _isCameraActive || _isMicrophoneActive || _isHovering || !_settings.WeatherEnabled)
         {
             return;
         }
@@ -1211,6 +1228,12 @@ public partial class MainWindow : Window
 
     private void StartTimer(TimeSpan duration)
     {
+        if (!_settings.TimerEnabled)
+        {
+            ShowUtility("Timer", "Timer kapali", "T", 0, TimeSpan.FromSeconds(1.5));
+            return;
+        }
+
         _timerStartedAt = DateTimeOffset.Now;
         _timerEndsAt = DateTimeOffset.Now.Add(duration);
         _timerTimer?.Stop();
@@ -1398,6 +1421,51 @@ public partial class MainWindow : Window
     private void NotificationSettingsMenuItem_Click(object sender, RoutedEventArgs e)
     {
         TryOpenSettings("ms-settings:privacy-notifications");
+    }
+
+    private async void SettingsMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new SettingsDialog(_settings, IsStartWithWindowsEnabled())
+        {
+            Owner = this
+        };
+
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        _settings = dialog.Settings;
+        _settings.Save();
+        SetStartWithWindows(dialog.StartWithWindows);
+        RefreshStartupMenuState();
+        ApplyRuntimeSettings();
+
+        if (_settings.NotificationsEnabled && _notificationListener is null)
+        {
+            await InitializeNotificationsAsync();
+        }
+    }
+
+    private void ApplyRuntimeSettings()
+    {
+        if (_settings.WeatherEnabled)
+        {
+            if (_weatherWatcher is null)
+            {
+                StartWeatherWatcher();
+            }
+        }
+        else
+        {
+            _weatherWatcher?.Stop();
+            _weatherWatcher = null;
+        }
+
+        if (!_settings.TimerEnabled && IsTimerActive)
+        {
+            StopTimer();
+        }
     }
 
     private async void SwitchAudioOutputMenuItem_Click(object sender, RoutedEventArgs e)

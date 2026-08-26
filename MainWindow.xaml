@@ -185,6 +185,8 @@
                     Click="StartupMenuItem_Click" />
           <MenuItem Header="Notification Settings"
                     Click="NotificationSettingsMenuItem_Click" />
+          <MenuItem Header="Settings"
+                    Click="SettingsMenuItem_Click" />
           <Separator />
           <MenuItem Header="Switch Audio Output"
                     Click="SwitchAudioOutputMenuItem_Click" />
