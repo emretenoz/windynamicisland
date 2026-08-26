@@ -17,6 +17,87 @@
         MouseWheel="Window_MouseWheel">
   <Window.Resources>
     <QuadraticEase x:Key="IslandEase" EasingMode="EaseInOut" />
+    <Style TargetType="ContextMenu">
+      <Setter Property="OverridesDefaultStyle" Value="True" />
+      <Setter Property="SnapsToDevicePixels" Value="True" />
+      <Setter Property="HasDropShadow" Value="True" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ContextMenu">
+            <Border Background="#F20B0B0D"
+                    BorderBrush="#22FFFFFF"
+                    BorderThickness="1"
+                    CornerRadius="12"
+                    Padding="6">
+              <StackPanel IsItemsHost="True" />
+            </Border>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style TargetType="MenuItem">
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Height" Value="32" />
+      <Setter Property="MinWidth" Value="210" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="MenuItem">
+            <Border x:Name="Root"
+                    Background="Transparent"
+                    CornerRadius="8"
+                    Padding="10,0"
+                    SnapsToDevicePixels="True">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="18" />
+                  <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="CheckMark"
+                           Text="✓"
+                           Foreground="#FFD23F"
+                           FontSize="12"
+                           FontWeight="Bold"
+                           HorizontalAlignment="Left"
+                           VerticalAlignment="Center"
+                           Visibility="Collapsed" />
+                <ContentPresenter Grid.Column="1"
+                                  ContentSource="Header"
+                                  RecognizesAccessKey="True"
+                                  VerticalAlignment="Center" />
+              </Grid>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsHighlighted" Value="True">
+                <Setter TargetName="Root" Property="Background" Value="#22FFFFFF" />
+              </Trigger>
+              <Trigger Property="IsPressed" Value="True">
+                <Setter TargetName="Root" Property="Background" Value="#34FFFFFF" />
+              </Trigger>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="CheckMark" Property="Visibility" Value="Visible" />
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Foreground" Value="#66FFFFFF" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style TargetType="Separator">
+      <Setter Property="Margin" Value="8,5" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Separator">
+            <Border Height="1"
+                    Background="#18FFFFFF" />
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
     <Style x:Key="MediaIconButtonStyle" TargetType="Button">
       <Setter Property="Width" Value="40" />
       <Setter Property="Height" Value="40" />
