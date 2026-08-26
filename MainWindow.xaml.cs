@@ -11,7 +11,6 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using AudioSwitcher.AudioApi;
 using AudioSwitcher.AudioApi.CoreAudio;
-using Microsoft.VisualBasic;
 using Microsoft.Win32;
 using Windows.Foundation.Metadata;
 using Windows.Media.Control;
@@ -1410,26 +1409,15 @@ public partial class MainWindow : Window
 
     private void TimerCustomMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        var input = Interaction.InputBox("Timer kac dakika olsun? (1-240)", "Custom Timer", "10").Trim();
-        if (string.IsNullOrWhiteSpace(input))
+        var dialog = new TimerInputDialog
         {
-            return;
-        }
+            Owner = this
+        };
 
-        input = input.Replace(',', '.');
-        if (!double.TryParse(input, System.Globalization.NumberStyles.AllowDecimalPoint, System.Globalization.CultureInfo.InvariantCulture, out var minutes))
+        if (dialog.ShowDialog() == true && dialog.Minutes is { } minutes)
         {
-            ShowUtility("Timer", "Gecerli bir dakika yaz", "T", 0, TimeSpan.FromSeconds(1.8));
-            return;
+            StartTimer(TimeSpan.FromMinutes(minutes));
         }
-
-        if (minutes is < 1 or > 240)
-        {
-            ShowUtility("Timer", "1-240 dakika arasi olmali", "T", 0, TimeSpan.FromSeconds(1.8));
-            return;
-        }
-
-        StartTimer(TimeSpan.FromMinutes(minutes));
     }
 
     private void TimerStopMenuItem_Click(object sender, RoutedEventArgs e)

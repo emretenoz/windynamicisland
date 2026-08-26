@@ -35,6 +35,7 @@ obj/
 .modern-menu-build/
 .timer-rename-build/
 .timer-presets-build/
+.modern-timer-dialog-build/
 .vs/
 *.user
 *.suo
