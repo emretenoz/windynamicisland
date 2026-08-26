@@ -168,8 +168,6 @@ public partial class MainWindow : Window
 
     private void SetTrackText(string title, string artist)
     {
-        TrackTitleText.Text = title;
-        TrackArtistText.Text = artist;
         ExpandedTitleText.Text = title;
         ExpandedArtistText.Text = artist;
     }
@@ -210,6 +208,11 @@ public partial class MainWindow : Window
 
     private async void Island_MouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
+        if (FindVisualParent<Button>(e.OriginalSource as DependencyObject) is not null)
+        {
+            return;
+        }
+
         if (_state is IslandState.Thinking or IslandState.Response)
         {
             return;
@@ -269,6 +272,7 @@ public partial class MainWindow : Window
 
     private async void PrevButton_Click(object sender, RoutedEventArgs e)
     {
+        e.Handled = true;
         if (_mediaSession is not null)
         {
             await _mediaSession.TrySkipPreviousAsync();
@@ -277,6 +281,7 @@ public partial class MainWindow : Window
 
     private async void PlayPauseButton_Click(object sender, RoutedEventArgs e)
     {
+        e.Handled = true;
         if (_mediaSession is not null)
         {
             await _mediaSession.TryTogglePlayPauseAsync();
@@ -285,6 +290,7 @@ public partial class MainWindow : Window
 
     private async void NextButton_Click(object sender, RoutedEventArgs e)
     {
+        e.Handled = true;
         if (_mediaSession is not null)
         {
             await _mediaSession.TrySkipNextAsync();
@@ -358,6 +364,22 @@ public partial class MainWindow : Window
                 });
             });
         }
+    }
+
+    private static T? FindVisualParent<T>(DependencyObject? child)
+        where T : DependencyObject
+    {
+        while (child is not null)
+        {
+            if (child is T match)
+            {
+                return match;
+            }
+
+            child = VisualTreeHelper.GetParent(child);
+        }
+
+        return null;
     }
 
     [DllImport("user32.dll")]

@@ -16,6 +16,39 @@
         MouseLeave="Window_MouseLeave">
   <Window.Resources>
     <QuadraticEase x:Key="IslandEase" EasingMode="EaseInOut" />
+    <Style x:Key="MediaIconButtonStyle" TargetType="Button">
+      <Setter Property="Width" Value="30" />
+      <Setter Property="Height" Value="30" />
+      <Setter Property="Margin" Value="2,0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Background" Value="#18FFFFFF" />
+      <Setter Property="BorderBrush" Value="#20FFFFFF" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Root"
+                    Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}"
+                    CornerRadius="15">
+              <ContentPresenter HorizontalAlignment="Center"
+                                VerticalAlignment="Center" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Root" Property="Background" Value="#2CFFFFFF" />
+                <Setter TargetName="Root" Property="BorderBrush" Value="#38FFFFFF" />
+              </Trigger>
+              <Trigger Property="IsPressed" Value="True">
+                <Setter TargetName="Root" Property="Background" Value="#40FFFFFF" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
     <Storyboard x:Key="PulseStoryboard" RepeatBehavior="Forever" AutoReverse="True">
       <DoubleAnimation Storyboard.TargetName="GlowBorder"
                        Storyboard.TargetProperty="Opacity"
@@ -61,23 +94,16 @@
 
         <Grid Margin="12,6">
           <Grid x:Name="MediaCompactView">
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="Auto" />
-              <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-            <Ellipse Width="8" Height="8" Fill="#1DB954" VerticalAlignment="Center" />
-            <StackPanel Grid.Column="1" Margin="9,0,0,0" VerticalAlignment="Center">
-              <TextBlock x:Name="TrackTitleText"
-                         Text="Media"
-                         Foreground="White"
-                         FontSize="12"
-                         FontWeight="SemiBold"
-                         TextTrimming="CharacterEllipsis" />
-              <TextBlock x:Name="TrackArtistText"
-                         Text="Listening"
-                         Foreground="#B8FFFFFF"
-                         FontSize="10"
-                         TextTrimming="CharacterEllipsis" />
+            <StackPanel Orientation="Horizontal"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center">
+              <Ellipse Width="7" Height="7" Fill="#1DB954" Margin="0,0,10,0" />
+              <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <Border Width="3" Height="10" CornerRadius="1.5" Background="#DFFFFFFF" Margin="0,0,3,0" />
+                <Border Width="3" Height="16" CornerRadius="1.5" Background="#FFFFFFFF" Margin="0,0,3,0" />
+                <Border Width="3" Height="8" CornerRadius="1.5" Background="#AFFFFFFF" Margin="0,0,3,0" />
+                <Border Width="3" Height="13" CornerRadius="1.5" Background="#CFFFFFFF" />
+              </StackPanel>
             </StackPanel>
           </Grid>
 
@@ -85,7 +111,7 @@
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="54" />
               <ColumnDefinition Width="*" />
-              <ColumnDefinition Width="96" />
+              <ColumnDefinition Width="108" />
             </Grid.ColumnDefinitions>
             <Border Width="46" Height="46" CornerRadius="6" Background="#1D1D1F" ClipToBounds="True">
               <Image x:Name="AlbumArtImage" Stretch="UniformToFill" />
@@ -107,9 +133,17 @@
                         Orientation="Horizontal"
                         HorizontalAlignment="Right"
                         VerticalAlignment="Center">
-              <Button x:Name="PrevButton" Content="&lt;&lt;" Click="PrevButton_Click" Style="{StaticResource {x:Static ToolBar.ButtonStyleKey}}" Foreground="White" />
-              <Button x:Name="PlayPauseButton" Content="||" Click="PlayPauseButton_Click" Style="{StaticResource {x:Static ToolBar.ButtonStyleKey}}" Foreground="White" />
-              <Button x:Name="NextButton" Content="&gt;&gt;" Click="NextButton_Click" Style="{StaticResource {x:Static ToolBar.ButtonStyleKey}}" Foreground="White" />
+              <Button x:Name="PrevButton" Click="PrevButton_Click" Style="{StaticResource MediaIconButtonStyle}">
+                <Path Fill="White" Stretch="Uniform" Width="12" Height="12" Data="M 10 2 L 4 6 L 10 10 Z M 3 2 L 1.8 2 L 1.8 10 L 3 10 Z" />
+              </Button>
+              <Button x:Name="PlayPauseButton" Click="PlayPauseButton_Click" Style="{StaticResource MediaIconButtonStyle}">
+                <Grid Width="13" Height="13">
+                  <Path Fill="White" Stretch="Uniform" Data="M 2 1 L 2 12 L 5 12 L 5 1 Z M 8 1 L 8 12 L 11 12 L 11 1 Z" />
+                </Grid>
+              </Button>
+              <Button x:Name="NextButton" Click="NextButton_Click" Style="{StaticResource MediaIconButtonStyle}">
+                <Path Fill="White" Stretch="Uniform" Width="12" Height="12" Data="M 2 2 L 8 6 L 2 10 Z M 9 2 L 10.2 2 L 10.2 10 L 9 10 Z" />
+              </Button>
             </StackPanel>
           </Grid>
 
