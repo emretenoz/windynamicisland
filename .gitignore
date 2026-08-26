@@ -38,6 +38,7 @@ obj/
 .modern-timer-dialog-build/
 .timer-compact-build/
 .timer-compact-tune-build/
+.timer-center-build/
 .vs/
 *.user
 *.suo

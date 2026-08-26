@@ -1250,10 +1250,24 @@ public partial class MainWindow : Window
         var totalSeconds = Math.Max(1, (_timerEndsAt.Value - (_timerStartedAt ?? DateTimeOffset.Now)).TotalSeconds);
         var progress = Math.Clamp(1 - remaining.TotalSeconds / totalSeconds, 0, 1);
         CompactTimerText.Text = FormatRemaining(remaining);
+        UpdateCompactTimerPlacement();
         CompactTimerText.Visibility = Visibility.Visible;
         TimerPanel.Visibility = Visibility.Visible;
         TimerTimeText.Text = FormatRemaining(remaining);
         TimerProgressFill.Width = progress * 374;
+    }
+
+    private void UpdateCompactTimerPlacement()
+    {
+        if (_isMediaActive)
+        {
+            CompactTimerText.HorizontalAlignment = HorizontalAlignment.Right;
+            CompactTimerText.Margin = new Thickness(8, 0, 0, 0);
+            return;
+        }
+
+        CompactTimerText.HorizontalAlignment = HorizontalAlignment.Center;
+        CompactTimerText.Margin = new Thickness(0);
     }
 
     private static string FormatRemaining(TimeSpan remaining)
