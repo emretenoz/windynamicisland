@@ -6,8 +6,11 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
+using Windows.Foundation.Metadata;
 using Windows.Media.Control;
 using Windows.Storage.Streams;
+using Windows.UI.Notifications;
+using Windows.UI.Notifications.Management;
 using WinDynamicIsland.Models;
 using WinDynamicIsland.Services;
 
@@ -24,6 +27,8 @@ public partial class MainWindow : Window
     private readonly AgentApiService _agentService = new();
     private GlobalSystemMediaTransportControlsSessionManager? _mediaManager;
     private GlobalSystemMediaTransportControlsSession? _mediaSession;
+    private UserNotificationListener? _notificationListener;
+    private CancellationTokenSource? _notificationCollapseCts;
     private IslandState _state = IslandState.MediaCompact;
     private bool _isHovering;
 
@@ -38,6 +43,7 @@ public partial class MainWindow : Window
         HideFromAltTab();
         AddTransparentHitTestSupport();
         await InitializeMediaAsync();
+        await InitializeNotificationsAsync();
         TransitionTo(IslandState.MediaCompact);
     }
 
@@ -48,6 +54,14 @@ public partial class MainWindow : Window
         {
             _mediaManager.CurrentSessionChanged -= MediaManager_CurrentSessionChanged;
         }
+
+        if (_notificationListener is not null)
+        {
+            _notificationListener.NotificationChanged -= NotificationListener_NotificationChanged;
+        }
+
+        _notificationCollapseCts?.Cancel();
+        _notificationCollapseCts?.Dispose();
     }
 
     private void PositionAtTopCenter()
@@ -105,6 +119,107 @@ public partial class MainWindow : Window
         _mediaSession = _mediaManager.GetCurrentSession();
         AttachMediaEvents(_mediaSession);
         await RefreshMediaAsync();
+    }
+
+    private async Task InitializeNotificationsAsync()
+    {
+        try
+        {
+            if (!ApiInformation.IsTypePresent("Windows.UI.Notifications.Management.UserNotificationListener"))
+            {
+                return;
+            }
+
+            _notificationListener = UserNotificationListener.Current;
+            var access = await _notificationListener.RequestAccessAsync();
+            if (access is not UserNotificationListenerAccessStatus.Allowed)
+            {
+                return;
+            }
+
+            _notificationListener.NotificationChanged += NotificationListener_NotificationChanged;
+        }
+        catch
+        {
+            _notificationListener = null;
+        }
+    }
+
+    private void NotificationListener_NotificationChanged(UserNotificationListener sender, UserNotificationChangedEventArgs args)
+    {
+        if (args.ChangeKind is not UserNotificationChangedKind.Added)
+        {
+            return;
+        }
+
+        try
+        {
+            var notification = sender.GetNotification(args.UserNotificationId);
+            if (notification is null)
+            {
+                return;
+            }
+
+            var preview = ParseNotification(notification);
+            if (string.IsNullOrWhiteSpace(preview.Message))
+            {
+                return;
+            }
+
+            Dispatcher.Invoke(() => ShowNotification(preview.AppName, preview.Message));
+        }
+        catch
+        {
+        }
+    }
+
+    private static NotificationPreview ParseNotification(UserNotification notification)
+    {
+        var appName = notification.AppInfo?.DisplayInfo.DisplayName;
+        if (string.IsNullOrWhiteSpace(appName))
+        {
+            appName = "Notification";
+        }
+
+        var binding = notification.Notification.Visual.GetBinding(KnownNotificationBindings.ToastGeneric);
+        var parts = binding?.GetTextElements()
+            .Select(text => text.Text)
+            .Where(text => !string.IsNullOrWhiteSpace(text))
+            .ToArray() ?? Array.Empty<string>();
+
+        return new NotificationPreview(appName, string.Join(" - ", parts));
+    }
+
+    private void ShowNotification(string appName, string message)
+    {
+        if (_state is IslandState.Recording or IslandState.Thinking or IslandState.Response)
+        {
+            return;
+        }
+
+        NotificationAppText.Text = TrimForIsland(appName, 34);
+        NotificationMessageText.Text = TrimForIsland(message, 78);
+        TransitionTo(IslandState.Notification);
+
+        _notificationCollapseCts?.Cancel();
+        _notificationCollapseCts?.Dispose();
+        _notificationCollapseCts = new CancellationTokenSource();
+        _ = CollapseNotificationLaterAsync(_notificationCollapseCts.Token);
+    }
+
+    private async Task CollapseNotificationLaterAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(4800, cancellationToken);
+            if (!cancellationToken.IsCancellationRequested && _state is IslandState.Notification)
+            {
+                TransitionTo(_isHovering ? IslandState.MediaExpanded : IslandState.MediaCompact);
+            }
+        }
+        catch (TaskCanceledException)
+        {
+        }
     }
 
     private void MediaManager_CurrentSessionChanged(GlobalSystemMediaTransportControlsSessionManager sender, CurrentSessionChangedEventArgs args)
@@ -270,6 +385,16 @@ public partial class MainWindow : Window
         TransitionTo(_isHovering ? IslandState.MediaExpanded : IslandState.MediaCompact);
     }
 
+    private static string TrimForIsland(string value, int maxLength)
+    {
+        if (value.Length <= maxLength)
+        {
+            return value;
+        }
+
+        return value[..Math.Max(0, maxLength - 3)] + "...";
+    }
+
     private async void PrevButton_Click(object sender, RoutedEventArgs e)
     {
         e.Handled = true;
@@ -307,6 +432,7 @@ public partial class MainWindow : Window
             IslandState.Recording => (280d, 45d),
             IslandState.Thinking => (280d, 45d),
             IslandState.Response => (330d, 66d),
+            IslandState.Notification => (330d, 52d),
             _ => (190d, 36d)
         };
 
@@ -316,6 +442,7 @@ public partial class MainWindow : Window
         SetView(RecordingView, nextState is IslandState.Recording);
         SetView(ThinkingView, nextState is IslandState.Thinking);
         SetView(ResponseView, nextState is IslandState.Response);
+        SetView(NotificationView, nextState is IslandState.Notification);
 
         var pulse = (Storyboard)Resources["PulseStoryboard"];
         if (nextState is IslandState.Recording)
@@ -395,5 +522,8 @@ public enum IslandState
     MediaExpanded,
     Recording,
     Thinking,
-    Response
+    Response,
+    Notification
 }
+
+public sealed record NotificationPreview(string AppName, string Message);

@@ -181,6 +181,41 @@
                        TextTrimming="CharacterEllipsis"
                        VerticalAlignment="Center" />
           </Grid>
+
+          <Grid x:Name="NotificationView" Opacity="0" Visibility="Collapsed">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Border Width="30"
+                    Height="30"
+                    CornerRadius="15"
+                    Background="#24FFFFFF"
+                    BorderBrush="#26FFFFFF"
+                    BorderThickness="1"
+                    VerticalAlignment="Center">
+              <Path Fill="White"
+                    Width="14"
+                    Height="14"
+                    Stretch="Uniform"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Data="M 6 1.2 C 3.8 1.2 2.4 2.8 2.4 5 L 2.4 7.3 L 1.4 8.9 L 1.4 10 L 10.6 10 L 10.6 8.9 L 9.6 7.3 L 9.6 5 C 9.6 2.8 8.2 1.2 6 1.2 Z M 4.4 10.8 C 4.7 11.8 5.3 12.3 6 12.3 C 6.7 12.3 7.3 11.8 7.6 10.8 Z" />
+            </Border>
+            <StackPanel Grid.Column="1" Margin="9,0,0,0" VerticalAlignment="Center">
+              <TextBlock x:Name="NotificationAppText"
+                         Text="Notification"
+                         Foreground="White"
+                         FontSize="12"
+                         FontWeight="SemiBold"
+                         TextTrimming="CharacterEllipsis" />
+              <TextBlock x:Name="NotificationMessageText"
+                         Text=""
+                         Foreground="#B8FFFFFF"
+                         FontSize="10.5"
+                         TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+          </Grid>
         </Grid>
       </Grid>
     </Border>
