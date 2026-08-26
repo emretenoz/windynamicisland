@@ -22,6 +22,10 @@ A lightweight Windows Dynamic Island-style WPF widget for media, notifications, 
 - Windows 10 19041 or newer.
 - .NET 8 Desktop Runtime.
 
+## macOS
+
+macOS is not supported by this WPF build. WinDynamicIsland depends on Windows-only APIs such as WPF, GSMTC, Windows notifications, and Windows privacy indicators.
+
 ## Build
 
 ```powershell

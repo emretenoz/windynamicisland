@@ -1,6 +1,7 @@
 bin/
 obj/
 release/
+WinDynamicIsland-*-win-x64.zip
 .verify-build/
 .latest-build/
 .polished-build/
