@@ -1498,7 +1498,7 @@ public partial class MainWindow : Window
                 return _isCameraActive || _isMicrophoneActive ? 180d : 154d;
             }
 
-            return _isCameraActive || _isMicrophoneActive ? 146d : 124d;
+            return _isCameraActive || _isMicrophoneActive ? 146d : 58d;
         }
 
         if (IsTimerActive)
