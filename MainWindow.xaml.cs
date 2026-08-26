@@ -1375,23 +1375,61 @@ public partial class MainWindow : Window
 
     private void TimerFiveMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        StartTimer(TimeSpan.FromMinutes(5));
+        StartTimerPreset(5);
     }
 
-    private void TimerTwentyFiveMenuItem_Click(object sender, RoutedEventArgs e)
+    private void TimerTenMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        StartTimer(TimeSpan.FromMinutes(25));
+        StartTimerPreset(10);
+    }
+
+    private void TimerFifteenMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        StartTimerPreset(15);
+    }
+
+    private void TimerThirtyMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        StartTimerPreset(30);
+    }
+
+    private void TimerFortyFiveMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        StartTimerPreset(45);
+    }
+
+    private void TimerSixtyMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        StartTimerPreset(60);
+    }
+
+    private void StartTimerPreset(double minutes)
+    {
+        StartTimer(TimeSpan.FromMinutes(minutes));
     }
 
     private void TimerCustomMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        var input = Interaction.InputBox("Timer kac dakika olsun?", "Custom Timer", "10");
-        if (!double.TryParse(input, out var minutes) || minutes <= 0)
+        var input = Interaction.InputBox("Timer kac dakika olsun? (1-240)", "Custom Timer", "10").Trim();
+        if (string.IsNullOrWhiteSpace(input))
         {
             return;
         }
 
-        StartTimer(TimeSpan.FromMinutes(Math.Clamp(minutes, 1, 240)));
+        input = input.Replace(',', '.');
+        if (!double.TryParse(input, System.Globalization.NumberStyles.AllowDecimalPoint, System.Globalization.CultureInfo.InvariantCulture, out var minutes))
+        {
+            ShowUtility("Timer", "Gecerli bir dakika yaz", "T", 0, TimeSpan.FromSeconds(1.8));
+            return;
+        }
+
+        if (minutes is < 1 or > 240)
+        {
+            ShowUtility("Timer", "1-240 dakika arasi olmali", "T", 0, TimeSpan.FromSeconds(1.8));
+            return;
+        }
+
+        StartTimer(TimeSpan.FromMinutes(minutes));
     }
 
     private void TimerStopMenuItem_Click(object sender, RoutedEventArgs e)
