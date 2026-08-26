@@ -168,7 +168,7 @@
             VerticalAlignment="Top"
             Margin="0,8,0,0"
             CornerRadius="18"
-            Background="#D9000000"
+            Background="#EE000000"
             Cursor="Hand"
             ClipToBounds="True"
             Opacity="1"

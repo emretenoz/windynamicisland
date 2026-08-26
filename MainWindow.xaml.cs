@@ -87,7 +87,6 @@ public partial class MainWindow : Window
     {
         PositionAtTopCenter();
         HideFromAltTab();
-        TryEnableAcrylicBackdrop();
         AddTransparentHitTestSupport();
         AddClipboardListener();
         RefreshStartupMenuState();
@@ -153,44 +152,6 @@ public partial class MainWindow : Window
         var helper = new WindowInteropHelper(this);
         var style = GetWindowLong(helper.Handle, GwlExStyle);
         SetWindowLong(helper.Handle, GwlExStyle, style | WsExToolWindow);
-    }
-
-    private void TryEnableAcrylicBackdrop()
-    {
-        try
-        {
-            var helper = new WindowInteropHelper(this);
-            if (helper.Handle == IntPtr.Zero)
-            {
-                return;
-            }
-
-            var accent = new AccentPolicy
-            {
-                AccentState = AccentState.AccentEnableAcrylicBlurBehind,
-                GradientColor = unchecked((int)0xD9000000)
-            };
-            var accentSize = Marshal.SizeOf<AccentPolicy>();
-            var accentPtr = Marshal.AllocHGlobal(accentSize);
-            try
-            {
-                Marshal.StructureToPtr(accent, accentPtr, false);
-                var data = new WindowCompositionAttributeData
-                {
-                    Attribute = WindowCompositionAttribute.WcaAccentPolicy,
-                    SizeOfData = accentSize,
-                    Data = accentPtr
-                };
-                SetWindowCompositionAttribute(helper.Handle, ref data);
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(accentPtr);
-            }
-        }
-        catch
-        {
-        }
     }
 
     private void AddTransparentHitTestSupport()
@@ -1788,9 +1749,6 @@ public partial class MainWindow : Window
     private static extern short GetKeyState(int nVirtKey);
 
     [DllImport("user32.dll")]
-    private static extern int SetWindowCompositionAttribute(IntPtr hwnd, ref WindowCompositionAttributeData data);
-
-    [DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();
 
     [DllImport("user32.dll")]
@@ -1816,37 +1774,6 @@ public partial class MainWindow : Window
 
     [DllImport("user32.dll", CharSet = CharSet.Auto)]
     private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MonitorInfo lpmi);
-}
-
-public enum AccentState
-{
-    AccentDisabled = 0,
-    AccentEnableGradient = 1,
-    AccentEnableTransparentGradient = 2,
-    AccentEnableBlurBehind = 3,
-    AccentEnableAcrylicBlurBehind = 4
-}
-
-public enum WindowCompositionAttribute
-{
-    WcaAccentPolicy = 19
-}
-
-[StructLayout(LayoutKind.Sequential)]
-public struct AccentPolicy
-{
-    public AccentState AccentState;
-    public int AccentFlags;
-    public int GradientColor;
-    public int AnimationId;
-}
-
-[StructLayout(LayoutKind.Sequential)]
-public struct WindowCompositionAttributeData
-{
-    public WindowCompositionAttribute Attribute;
-    public IntPtr Data;
-    public int SizeOfData;
 }
 
 public enum IslandState

@@ -11,7 +11,7 @@ A lightweight Windows Dynamic Island-style WPF widget for media, notifications, 
 - Mouse wheel volume control and audio output switching.
 - Camera and microphone privacy dots.
 - Fullscreen auto-hide animation.
-- Win11 acrylic-style backdrop and smoother CubicEase island transitions.
+- Smoother CubicEase island transitions.
 - Caps Lock, Num Lock, battery, and volume utility cards.
 - Display picker for multi-monitor setups.
 - Modern context menu and settings panel.
