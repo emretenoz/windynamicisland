@@ -426,6 +426,7 @@ public partial class MainWindow : Window
         var ownHandle = new WindowInteropHelper(this).Handle;
         if (foreground == IntPtr.Zero ||
             foreground == ownHandle ||
+            IsShellSurfaceWindow(foreground) ||
             !IsWindowVisible(foreground) ||
             IsIconic(foreground) ||
             !GetWindowRect(foreground, out var windowRect))
@@ -453,6 +454,20 @@ public partial class MainWindow : Window
 
         var placement = WindowPlacement.Create();
         return !GetWindowPlacement(foreground, ref placement) || placement.ShowCmd != SwShowMinimized;
+    }
+
+    private static bool IsShellSurfaceWindow(IntPtr hwnd)
+    {
+        var className = GetWindowClassName(hwnd);
+        return className is "Progman" or "WorkerW" or "Shell_TrayWnd";
+    }
+
+    private static string GetWindowClassName(IntPtr hwnd)
+    {
+        var className = new System.Text.StringBuilder(256);
+        return GetClassName(hwnd, className, className.Capacity) > 0
+            ? className.ToString()
+            : string.Empty;
     }
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -1776,6 +1791,9 @@ public partial class MainWindow : Window
 
     [DllImport("user32.dll", CharSet = CharSet.Auto)]
     private static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    private static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
 
     [DllImport("user32.dll")]
     private static extern bool GetWindowRect(IntPtr hWnd, out NativeRect lpRect);
