@@ -179,6 +179,10 @@
           </Grid>
 
           <Grid x:Name="MediaExpandedView" Margin="16,9" Opacity="0" Visibility="Collapsed">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="76" />
+              <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="86" />
               <ColumnDefinition Width="*" />
@@ -241,6 +245,43 @@
                 <Path Fill="White" Stretch="Uniform" Width="15" Height="15" Data="M 2 2 L 8 6 L 2 10 Z M 9 2 L 10.2 2 L 10.2 10 L 9 10 Z" />
               </Button>
             </StackPanel>
+            <Grid x:Name="PomodoroPanel"
+                  Grid.Row="1"
+                  Grid.ColumnSpan="3"
+                  Height="24"
+                  Margin="0,8,0,0"
+                  Visibility="Collapsed">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <TextBlock Text="Focus"
+                         Foreground="#B8FFFFFF"
+                         FontSize="10.5"
+                         FontWeight="SemiBold"
+                         VerticalAlignment="Center"
+                         Margin="0,0,10,0" />
+              <Border Grid.Column="1"
+                      Height="4"
+                      CornerRadius="2"
+                      Background="#24FFFFFF"
+                      VerticalAlignment="Center">
+                <Border x:Name="PomodoroProgressFill"
+                        Width="0"
+                        HorizontalAlignment="Left"
+                        CornerRadius="2"
+                        Background="#FFD23F" />
+              </Border>
+              <TextBlock x:Name="PomodoroTimeText"
+                         Grid.Column="2"
+                         Text="25:00"
+                         Foreground="White"
+                         FontSize="11"
+                         FontWeight="SemiBold"
+                         VerticalAlignment="Center"
+                         Margin="10,0,0,0" />
+            </Grid>
           </Grid>
 
           <Grid x:Name="NotificationView" Margin="14,8" Opacity="0" Visibility="Collapsed">

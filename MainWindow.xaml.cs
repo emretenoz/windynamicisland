@@ -62,6 +62,8 @@ public partial class MainWindow : Window
     private bool _isHiddenForFullscreen;
     private bool _showedNotificationReadError;
 
+    private bool IsPomodoroActive => _pomodoroEndsAt is not null;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -418,7 +420,7 @@ public partial class MainWindow : Window
                     _clipboardHistory.RemoveAt(_clipboardHistory.Count - 1);
                 }
 
-                ShowUtility("Pano", "Gorsel kopyalandi", "C", 1, TimeSpan.FromSeconds(2));
+                ShowUtility("Screenshot", "SS panoya kopyalandi", "S", 1, TimeSpan.FromSeconds(2.4));
             }
         }
         catch
@@ -588,7 +590,23 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (ShouldSuppressNotification(preview.AppName, preview.Message))
+        {
+            return;
+        }
+
         ShowNotification(preview.AppName, preview.Message, preview.Logo);
+    }
+
+    private static bool ShouldSuppressNotification(string appName, string message)
+    {
+        var value = $"{appName} {message}".ToLowerInvariant();
+        return value.Contains("snipping tool") ||
+               value.Contains("screen snip") ||
+               value.Contains("screenshot saved") ||
+               value.Contains("screenshot copied") ||
+               value.Contains("ekran alintisi") ||
+               value.Contains("ekran alıntısı");
     }
 
     private static async Task<NotificationPreview> ParseNotificationAsync(UserNotification notification)
@@ -1065,8 +1083,16 @@ public partial class MainWindow : Window
     private void Window_MouseEnter(object sender, System.Windows.Input.MouseEventArgs e)
     {
         _isHovering = true;
-        if (_state is IslandState.MediaCompact && _hasMediaSession)
+        if (_state is IslandState.MediaCompact && (_hasMediaSession || IsPomodoroActive))
         {
+            if (!_hasMediaSession && IsPomodoroActive)
+            {
+                SetTrackText("Pomodoro", "Focus timer");
+                SourceAppText.Text = "WinDynamicIsland";
+                AlbumArtImage.Source = null;
+            }
+
+            UpdatePomodoro();
             TransitionTo(IslandState.MediaExpanded);
         }
     }
@@ -1151,7 +1177,7 @@ public partial class MainWindow : Window
         };
         _pomodoroTimer.Tick += (_, _) => UpdatePomodoro();
         _pomodoroTimer.Start();
-        ShowUtility("Pomodoro", $"{Math.Round(duration.TotalMinutes)} dakika basladi", "T", 1, TimeSpan.FromSeconds(1.6));
+        ShowUtility("Pomodoro", $"{Math.Round(duration.TotalMinutes)} dakika basladi", "T", 1, TimeSpan.FromSeconds(1.2));
         UpdatePomodoro();
     }
 
@@ -1168,8 +1194,30 @@ public partial class MainWindow : Window
             _pomodoroTimer?.Stop();
             _pomodoroStartedAt = null;
             _pomodoroEndsAt = null;
+            PomodoroPanel.Visibility = Visibility.Collapsed;
             ShowNotification("Pomodoro", "Sure bitti, kisa mola zamani");
+            if (_state is IslandState.MediaExpanded && !_hasMediaSession)
+            {
+                TransitionTo(IslandState.MediaCompact);
+            }
+            return;
         }
+
+        var totalSeconds = Math.Max(1, (_pomodoroEndsAt.Value - (_pomodoroStartedAt ?? DateTimeOffset.Now)).TotalSeconds);
+        var progress = Math.Clamp(1 - remaining.TotalSeconds / totalSeconds, 0, 1);
+        PomodoroPanel.Visibility = Visibility.Visible;
+        PomodoroTimeText.Text = FormatRemaining(remaining);
+        PomodoroProgressFill.Width = progress * 374;
+    }
+
+    private static string FormatRemaining(TimeSpan remaining)
+    {
+        if (remaining.TotalHours >= 1)
+        {
+            return $"{(int)remaining.TotalHours}:{remaining.Minutes:00}";
+        }
+
+        return $"{remaining.Minutes:00}:{remaining.Seconds:00}";
     }
 
     private void StopPomodoro()
@@ -1177,6 +1225,7 @@ public partial class MainWindow : Window
         _pomodoroTimer?.Stop();
         _pomodoroStartedAt = null;
         _pomodoroEndsAt = null;
+        PomodoroPanel.Visibility = Visibility.Collapsed;
         ShowUtility("Pomodoro", "Durduruldu", "T", 0, TimeSpan.FromSeconds(1.3));
     }
 
@@ -1217,13 +1266,14 @@ public partial class MainWindow : Window
         var (width, height) = nextState switch
         {
             IslandState.MediaCompact => (GetCompactWidth(), GetCompactHeight()),
-            IslandState.MediaExpanded => (510d, 108d),
+            IslandState.MediaExpanded => (510d, IsPomodoroActive ? 140d : 108d),
             IslandState.Notification => (330d, 56d),
             IslandState.Utility => (330d, 56d),
             _ => (190d, 36d)
         };
 
         AnimateIsland(width, height, GetCornerRadius(nextState, height));
+        PomodoroPanel.Visibility = nextState is IslandState.MediaExpanded && IsPomodoroActive ? Visibility.Visible : Visibility.Collapsed;
         SetView(MediaCompactView, nextState is IslandState.MediaCompact);
         SetView(MediaExpandedView, nextState is IslandState.MediaExpanded);
         SetView(NotificationView, nextState is IslandState.Notification);

@@ -29,6 +29,7 @@ obj/
 .pomodoro-bubble-build/
 .pomodoro-chip-build/
 .pomodoro-clean-build/
+.pomodoro-hover-build/
 .vs/
 *.user
 *.suo
