@@ -2,8 +2,8 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Settings"
-        Width="340"
-        Height="360"
+        Width="360"
+        Height="420"
         WindowStyle="None"
         ResizeMode="NoResize"
         AllowsTransparency="True"
@@ -98,7 +98,7 @@
         <RowDefinition Height="Auto" />
       </Grid.RowDefinitions>
 
-      <StackPanel>
+      <StackPanel MouseLeftButtonDown="Header_MouseLeftButtonDown">
         <TextBlock Text="Settings"
                    Foreground="White"
                    FontSize="15"
@@ -109,31 +109,35 @@
                    Margin="0,4,0,0" />
       </StackPanel>
 
-      <StackPanel Grid.Row="1"
-                  Margin="0,12,0,0">
-        <CheckBox x:Name="StartWithWindowsCheckBox"
-                  Content="Start with Windows" />
-        <CheckBox x:Name="NotificationsCheckBox"
-                  Content="Notifications" />
-        <CheckBox x:Name="WeatherCheckBox"
-                  Content="Idle weather card" />
-        <CheckBox x:Name="ScreenshotPreviewCheckBox"
-                  Content="Screenshot preview" />
-        <CheckBox x:Name="TimerCheckBox"
-                  Content="Timer controls" />
-        <CheckBox x:Name="SystemAlertsCheckBox"
-                  Content="System alerts" />
-        <TextBlock Text="Display"
-                   Foreground="#9FFFFFFF"
-                   FontSize="11"
-                   FontWeight="SemiBold"
-                   Margin="0,14,0,6" />
-        <ComboBox x:Name="DisplayComboBox"
-                  Height="34"
-                  Foreground="White"
-                  Background="#18FFFFFF"
-                  BorderThickness="0" />
-      </StackPanel>
+      <ScrollViewer Grid.Row="1"
+                    Margin="0,12,0,0"
+                    VerticalScrollBarVisibility="Auto"
+                    HorizontalScrollBarVisibility="Disabled">
+        <StackPanel>
+          <CheckBox x:Name="StartWithWindowsCheckBox"
+                    Content="Start with Windows" />
+          <CheckBox x:Name="NotificationsCheckBox"
+                    Content="Notifications" />
+          <CheckBox x:Name="WeatherCheckBox"
+                    Content="Idle weather card" />
+          <CheckBox x:Name="ScreenshotPreviewCheckBox"
+                    Content="Screenshot preview" />
+          <CheckBox x:Name="TimerCheckBox"
+                    Content="Timer controls" />
+          <CheckBox x:Name="SystemAlertsCheckBox"
+                    Content="System alerts" />
+          <TextBlock Text="Display"
+                     Foreground="#9FFFFFFF"
+                     FontSize="11"
+                     FontWeight="SemiBold"
+                     Margin="0,14,0,6" />
+          <ComboBox x:Name="DisplayComboBox"
+                    Height="34"
+                    Foreground="White"
+                    Background="#18FFFFFF"
+                    BorderThickness="0" />
+        </StackPanel>
+      </ScrollViewer>
 
       <StackPanel Grid.Row="2"
                   Orientation="Horizontal"

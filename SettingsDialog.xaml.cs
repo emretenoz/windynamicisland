@@ -45,6 +45,14 @@ public partial class SettingsDialog : Window
         }
     }
 
+    private void Header_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ButtonState is MouseButtonState.Pressed)
+        {
+            DragMove();
+        }
+    }
+
     private void CancelButton_Click(object sender, RoutedEventArgs e)
     {
         DialogResult = false;
