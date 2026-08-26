@@ -1151,7 +1151,7 @@ public partial class MainWindow : Window
         };
         _pomodoroTimer.Tick += (_, _) => UpdatePomodoro();
         _pomodoroTimer.Start();
-        ShowPomodoroBubble();
+        ShowUtility("Pomodoro", $"{Math.Round(duration.TotalMinutes)} dakika basladi", "T", 1, TimeSpan.FromSeconds(1.6));
         UpdatePomodoro();
     }
 
@@ -1168,50 +1168,8 @@ public partial class MainWindow : Window
             _pomodoroTimer?.Stop();
             _pomodoroStartedAt = null;
             _pomodoroEndsAt = null;
-            HidePomodoroBubble();
             ShowNotification("Pomodoro", "Sure bitti, kisa mola zamani");
-            return;
         }
-
-        PomodoroBubbleText.Text = FormatRemaining(remaining);
-    }
-
-    private static string FormatRemaining(TimeSpan remaining)
-    {
-        if (remaining.TotalHours >= 1)
-        {
-            return $"{(int)remaining.TotalHours}:{remaining.Minutes:00}";
-        }
-
-        return $"{remaining.Minutes:00}:{remaining.Seconds:00}";
-    }
-
-    private void ShowPomodoroBubble()
-    {
-        PositionPomodoroBubble(Island.ActualWidth > 0 ? Island.ActualWidth : Island.Width);
-        PomodoroBubble.Visibility = Visibility.Visible;
-        PomodoroBubble.BeginAnimation(OpacityProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(180))
-        {
-            EasingFunction = (QuadraticEase)Resources["IslandEase"]
-        });
-    }
-
-    private void PositionPomodoroBubble(double islandWidth)
-    {
-        var gap = 6d;
-        var islandCenterOffset = islandWidth / 2;
-        var bubbleCenterOffset = PomodoroBubble.Width / 2;
-        PomodoroBubble.Margin = new Thickness(islandCenterOffset + bubbleCenterOffset + gap, 10, 0, 0);
-    }
-
-    private void HidePomodoroBubble()
-    {
-        var animation = new DoubleAnimation(0, TimeSpan.FromMilliseconds(160))
-        {
-            EasingFunction = (QuadraticEase)Resources["IslandEase"]
-        };
-        animation.Completed += (_, _) => PomodoroBubble.Visibility = Visibility.Collapsed;
-        PomodoroBubble.BeginAnimation(OpacityProperty, animation);
     }
 
     private void StopPomodoro()
@@ -1219,7 +1177,7 @@ public partial class MainWindow : Window
         _pomodoroTimer?.Stop();
         _pomodoroStartedAt = null;
         _pomodoroEndsAt = null;
-        HidePomodoroBubble();
+        ShowUtility("Pomodoro", "Durduruldu", "T", 0, TimeSpan.FromSeconds(1.3));
     }
 
     private void Island_MouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
@@ -1266,7 +1224,6 @@ public partial class MainWindow : Window
         };
 
         AnimateIsland(width, height, GetCornerRadius(nextState, height));
-        PositionPomodoroBubble(width);
         SetView(MediaCompactView, nextState is IslandState.MediaCompact);
         SetView(MediaExpandedView, nextState is IslandState.MediaExpanded);
         SetView(NotificationView, nextState is IslandState.Notification);

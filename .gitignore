@@ -28,6 +28,7 @@ obj/
 .feature-pack-build/
 .pomodoro-bubble-build/
 .pomodoro-chip-build/
+.pomodoro-clean-build/
 .vs/
 *.user
 *.suo
