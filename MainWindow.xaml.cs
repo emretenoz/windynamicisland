@@ -1,5 +1,7 @@
 using System.IO;
+using System.Net.Http;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
@@ -7,6 +9,8 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using AudioSwitcher.AudioApi;
+using AudioSwitcher.AudioApi.CoreAudio;
 using Microsoft.Win32;
 using Windows.Foundation.Metadata;
 using Windows.Media.Control;
@@ -24,22 +28,38 @@ public partial class MainWindow : Window
     private const int GwlExStyle = -20;
     private const int WsExToolWindow = 0x00000080;
     private const int WmNchittest = 0x0084;
+    private const int WmClipboardUpdate = 0x031D;
     private const int Httransparent = -1;
     private const int SwShowMinimized = 2;
     private const uint MonitorDefaultToNearest = 0x00000002;
+    private const string WeatherCity = "Istanbul";
+    private static readonly HttpClient HttpClient = new();
 
     private GlobalSystemMediaTransportControlsSessionManager? _mediaManager;
     private GlobalSystemMediaTransportControlsSession? _mediaSession;
+    private readonly HashSet<GlobalSystemMediaTransportControlsSession> _observedMediaSessions = new();
+    private CoreAudioController? _audioController;
+    private CoreAudioDevice? _defaultPlaybackDevice;
     private UserNotificationListener? _notificationListener;
     private CancellationTokenSource? _notificationCollapseCts;
+    private CancellationTokenSource? _utilityCollapseCts;
     private DispatcherTimer? _fullscreenWatcher;
     private DispatcherTimer? _privacyWatcher;
+    private DispatcherTimer? _notificationWatcher;
+    private DispatcherTimer? _pomodoroTimer;
+    private DispatcherTimer? _weatherWatcher;
+    private readonly HashSet<uint> _seenNotificationIds = new();
+    private readonly List<string> _clipboardHistory = new();
     private IslandState _state = IslandState.MediaCompact;
+    private DateTimeOffset? _pomodoroStartedAt;
+    private DateTimeOffset? _pomodoroEndsAt;
     private bool _hasMediaSession;
     private bool _isMediaActive;
     private bool _isCameraActive;
     private bool _isMicrophoneActive;
     private bool _isHovering;
+    private bool _isHiddenForFullscreen;
+    private bool _showedNotificationReadError;
 
     public MainWindow()
     {
@@ -51,12 +71,15 @@ public partial class MainWindow : Window
         PositionAtTopCenter();
         HideFromAltTab();
         AddTransparentHitTestSupport();
+        AddClipboardListener();
         RefreshStartupMenuState();
+        InitializeAudio();
         StartFullscreenWatcher();
         StartPrivacyWatcher();
+        StartWeatherWatcher();
         await InitializeMediaAsync();
-        await InitializeNotificationsAsync();
         TransitionTo(IslandState.MediaCompact);
+        await InitializeNotificationsAsync();
     }
 
     private void Window_Closed(object? sender, EventArgs e)
@@ -66,6 +89,8 @@ public partial class MainWindow : Window
             _mediaManager.CurrentSessionChanged -= MediaManager_CurrentSessionChanged;
         }
 
+        DetachAllMediaEvents();
+
         if (_notificationListener is not null)
         {
             _notificationListener.NotificationChanged -= NotificationListener_NotificationChanged;
@@ -73,8 +98,13 @@ public partial class MainWindow : Window
 
         _notificationCollapseCts?.Cancel();
         _notificationCollapseCts?.Dispose();
+        _utilityCollapseCts?.Cancel();
+        _utilityCollapseCts?.Dispose();
         _fullscreenWatcher?.Stop();
         _privacyWatcher?.Stop();
+        _notificationWatcher?.Stop();
+        _pomodoroTimer?.Stop();
+        _weatherWatcher?.Stop();
     }
 
     private void PositionAtTopCenter()
@@ -95,6 +125,29 @@ public partial class MainWindow : Window
         if (PresentationSource.FromVisual(this) is HwndSource source)
         {
             source.AddHook(WndProc);
+        }
+    }
+
+    private void AddClipboardListener()
+    {
+        var helper = new WindowInteropHelper(this);
+        if (helper.Handle != IntPtr.Zero)
+        {
+            AddClipboardFormatListener(helper.Handle);
+        }
+    }
+
+    private void InitializeAudio()
+    {
+        try
+        {
+            _audioController = new CoreAudioController();
+            _defaultPlaybackDevice = _audioController.DefaultPlaybackDevice;
+        }
+        catch
+        {
+            _audioController = null;
+            _defaultPlaybackDevice = null;
         }
     }
 
@@ -119,6 +172,18 @@ public partial class MainWindow : Window
         UpdatePrivacyIndicators();
     }
 
+    private void StartWeatherWatcher()
+    {
+        _weatherWatcher = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMinutes(20)
+        };
+        _weatherWatcher.Tick += async (_, _) => await ShowIdleWeatherAsync();
+        _weatherWatcher.Start();
+        _ = Task.Delay(TimeSpan.FromSeconds(8)).ContinueWith(_ =>
+            Dispatcher.Invoke(async () => await ShowIdleWeatherAsync()));
+    }
+
     private void UpdatePrivacyIndicators()
     {
         var cameraActive = IsCapabilityInUse("webcam");
@@ -134,6 +199,7 @@ public partial class MainWindow : Window
         CameraDot.Visibility = cameraActive ? Visibility.Visible : Visibility.Collapsed;
         MicrophoneDot.Visibility = microphoneActive ? Visibility.Visible : Visibility.Collapsed;
         PrivacyIndicator.Visibility = cameraActive || microphoneActive ? Visibility.Visible : Visibility.Collapsed;
+        CompactSplitDivider.Visibility = _isMediaActive && (cameraActive || microphoneActive) ? Visibility.Visible : Visibility.Collapsed;
 
         if (_state is IslandState.MediaCompact)
         {
@@ -183,20 +249,8 @@ public partial class MainWindow : Window
     private static bool IsLastUsedOpen(RegistryKey key)
     {
         var start = ToLong(key.GetValue("LastUsedTimeStart"));
-        var stop = key.GetValue("LastUsedTimeStop");
-        var stopValue = ToLong(stop);
-
-        if (start > 0 && stopValue == 0)
-        {
-            return true;
-        }
-
-        if (start > 0 && stopValue < 0 && WasStartedVeryRecently(start))
-        {
-            return true;
-        }
-
-        return false;
+        var stop = ToLong(key.GetValue("LastUsedTimeStop"));
+        return start > 0 && stop == 0;
     }
 
     private static long ToLong(object? value)
@@ -210,31 +264,58 @@ public partial class MainWindow : Window
         };
     }
 
-    private static bool WasStartedVeryRecently(long fileTime)
-    {
-        try
-        {
-            return DateTime.UtcNow - DateTime.FromFileTimeUtc(fileTime) < TimeSpan.FromSeconds(8);
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
     private void UpdateFullscreenVisibility()
     {
         var shouldHide = IsAnotherWindowFullscreen();
-        if (shouldHide && Visibility != Visibility.Hidden)
+        if (shouldHide == _isHiddenForFullscreen)
         {
-            Visibility = Visibility.Hidden;
             return;
         }
 
-        if (!shouldHide && Visibility != Visibility.Visible)
+        _isHiddenForFullscreen = shouldHide;
+        AnimateFullscreenVisibility(shouldHide);
+    }
+
+    private void AnimateFullscreenVisibility(bool hide)
+    {
+        var ease = (QuadraticEase)Resources["IslandEase"];
+        var duration = TimeSpan.FromMilliseconds(hide ? 180 : 240);
+
+        if (!hide)
         {
             Visibility = Visibility.Visible;
+            Island.Opacity = 0;
+            IslandScale.ScaleX = 0.06;
+            IslandScale.ScaleY = 0.82;
         }
+
+        var scaleXAnimation = new DoubleAnimation(hide ? 0.06 : 1, duration)
+        {
+            EasingFunction = ease
+        };
+        var scaleYAnimation = new DoubleAnimation(hide ? 0.82 : 1, duration)
+        {
+            EasingFunction = ease
+        };
+        var opacityAnimation = new DoubleAnimation(hide ? 0 : 1, duration)
+        {
+            EasingFunction = ease
+        };
+
+        if (hide)
+        {
+            opacityAnimation.Completed += (_, _) =>
+            {
+                if (_isHiddenForFullscreen)
+                {
+                    Visibility = Visibility.Hidden;
+                }
+            };
+        }
+
+        IslandScale.BeginAnimation(ScaleTransform.ScaleXProperty, scaleXAnimation);
+        IslandScale.BeginAnimation(ScaleTransform.ScaleYProperty, scaleYAnimation);
+        Island.BeginAnimation(OpacityProperty, opacityAnimation);
     }
 
     private bool IsAnotherWindowFullscreen()
@@ -274,6 +355,12 @@ public partial class MainWindow : Window
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
+        if (msg == WmClipboardUpdate)
+        {
+            HandleClipboardUpdate();
+            return IntPtr.Zero;
+        }
+
         if (msg != WmNchittest)
         {
             return IntPtr.Zero;
@@ -299,12 +386,51 @@ public partial class MainWindow : Window
         return new Point(x, y);
     }
 
+    private void HandleClipboardUpdate()
+    {
+        try
+        {
+            if (Clipboard.ContainsText())
+            {
+                var text = Clipboard.GetText().Trim();
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    return;
+                }
+
+                _clipboardHistory.Remove(text);
+                _clipboardHistory.Insert(0, text);
+                if (_clipboardHistory.Count > 5)
+                {
+                    _clipboardHistory.RemoveAt(_clipboardHistory.Count - 1);
+                }
+
+                ShowUtility("Pano", TrimForIsland(text.ReplaceLineEndings(" "), 72), "C", 1, TimeSpan.FromSeconds(2));
+                return;
+            }
+
+            if (Clipboard.ContainsImage())
+            {
+                _clipboardHistory.Insert(0, "[Gorsel]");
+                if (_clipboardHistory.Count > 5)
+                {
+                    _clipboardHistory.RemoveAt(_clipboardHistory.Count - 1);
+                }
+
+                ShowUtility("Pano", "Gorsel kopyalandi", "C", 1, TimeSpan.FromSeconds(2));
+            }
+        }
+        catch
+        {
+        }
+    }
+
     private async Task InitializeMediaAsync()
     {
         _mediaManager = await GlobalSystemMediaTransportControlsSessionManager.RequestAsync();
         _mediaManager.CurrentSessionChanged += MediaManager_CurrentSessionChanged;
-        _mediaSession = _mediaManager.GetCurrentSession();
-        AttachMediaEvents(_mediaSession);
+        SyncMediaSessions();
+        await SelectBestMediaSessionAsync();
         await RefreshMediaAsync();
     }
 
@@ -321,14 +447,112 @@ public partial class MainWindow : Window
             var access = await _notificationListener.RequestAccessAsync();
             if (access is not UserNotificationListenerAccessStatus.Allowed)
             {
+                ShowNotificationAccessIssue(access);
                 return;
             }
 
-            _notificationListener.NotificationChanged += NotificationListener_NotificationChanged;
+            await SeedExistingNotificationsAsync();
+            TrySubscribeNotificationEvents();
+            StartNotificationWatcher();
         }
         catch
         {
             _notificationListener = null;
+            ShowNotification("WinDynamicIsland", "Bildirim sistemi okunamadi");
+        }
+    }
+
+    private void TrySubscribeNotificationEvents()
+    {
+        if (_notificationListener is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _notificationListener.NotificationChanged += NotificationListener_NotificationChanged;
+        }
+        catch
+        {
+            // Some unpackaged WPF apps can poll notifications but cannot subscribe to this WinRT event.
+        }
+    }
+
+    private void ShowNotificationAccessIssue(UserNotificationListenerAccessStatus access)
+    {
+        var message = access switch
+        {
+            UserNotificationListenerAccessStatus.Denied => "Bildirim izni reddedildi",
+            UserNotificationListenerAccessStatus.Unspecified => "Bildirim izni verilmedi",
+            _ => "Bildirim izni kapali"
+        };
+
+        ShowNotification("WinDynamicIsland", message);
+    }
+
+    private async Task SeedExistingNotificationsAsync()
+    {
+        if (_notificationListener is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var notifications = await _notificationListener.GetNotificationsAsync(NotificationKinds.Toast);
+            foreach (var notification in notifications)
+            {
+                _seenNotificationIds.Add(notification.Id);
+            }
+        }
+        catch
+        {
+            if (!_showedNotificationReadError)
+            {
+                _showedNotificationReadError = true;
+                ShowNotification("WinDynamicIsland", "Bildirim listesi okunamadi");
+            }
+        }
+    }
+
+    private void StartNotificationWatcher()
+    {
+        _notificationWatcher = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(1500)
+        };
+        _notificationWatcher.Tick += async (_, _) => await PollNotificationsAsync();
+        _notificationWatcher.Start();
+    }
+
+    private async Task PollNotificationsAsync()
+    {
+        if (_notificationListener is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var notifications = await _notificationListener.GetNotificationsAsync(NotificationKinds.Toast);
+            foreach (var notification in notifications.OrderBy(item => item.Id))
+            {
+                if (!_seenNotificationIds.Add(notification.Id))
+                {
+                    continue;
+                }
+
+                await TryShowNotificationAsync(notification);
+            }
+        }
+        catch
+        {
+            if (!_showedNotificationReadError)
+            {
+                _showedNotificationReadError = true;
+                ShowNotification("WinDynamicIsland", "Bildirim listesi okunamadi");
+            }
         }
     }
 
@@ -347,20 +571,26 @@ public partial class MainWindow : Window
                 return;
             }
 
-            var preview = ParseNotification(notification);
-            if (string.IsNullOrWhiteSpace(preview.Message))
-            {
-                return;
-            }
-
-            Dispatcher.Invoke(() => ShowNotification(preview.AppName, preview.Message));
+            _seenNotificationIds.Add(notification.Id);
+            _ = Dispatcher.InvokeAsync(async () => await TryShowNotificationAsync(notification));
         }
         catch
         {
         }
     }
 
-    private static NotificationPreview ParseNotification(UserNotification notification)
+    private async Task TryShowNotificationAsync(UserNotification notification)
+    {
+        var preview = await ParseNotificationAsync(notification);
+        if (string.IsNullOrWhiteSpace(preview.Message))
+        {
+            return;
+        }
+
+        ShowNotification(preview.AppName, preview.Message, preview.Logo);
+    }
+
+    private static async Task<NotificationPreview> ParseNotificationAsync(UserNotification notification)
     {
         var appName = notification.AppInfo?.DisplayInfo.DisplayName;
         if (string.IsNullOrWhiteSpace(appName))
@@ -374,19 +604,64 @@ public partial class MainWindow : Window
             .Where(text => !string.IsNullOrWhiteSpace(text))
             .ToArray() ?? Array.Empty<string>();
 
-        return new NotificationPreview(appName, string.Join(" - ", parts));
+        BitmapImage? logo = null;
+        try
+        {
+            var logoReference = notification.AppInfo?.DisplayInfo.GetLogo(new Windows.Foundation.Size(32, 32));
+            if (logoReference is not null)
+            {
+                logo = await LoadBitmapAsync(logoReference);
+            }
+        }
+        catch
+        {
+        }
+
+        return new NotificationPreview(appName, string.Join(" - ", parts), logo);
     }
 
-    private void ShowNotification(string appName, string message)
+    private void ShowNotification(string appName, string message, ImageSource? logo = null)
     {
         NotificationAppText.Text = TrimForIsland(appName, 34);
         NotificationMessageText.Text = TrimForIsland(message, 78);
+        NotificationLogoImage.Source = logo;
+        NotificationLogoImage.Visibility = logo is null ? Visibility.Collapsed : Visibility.Visible;
+        NotificationFallbackIcon.Visibility = logo is null ? Visibility.Visible : Visibility.Collapsed;
         TransitionTo(IslandState.Notification);
 
         _notificationCollapseCts?.Cancel();
         _notificationCollapseCts?.Dispose();
         _notificationCollapseCts = new CancellationTokenSource();
         _ = CollapseNotificationLaterAsync(_notificationCollapseCts.Token);
+    }
+
+    private void ShowUtility(string title, string detail, string icon, double progress = 0, TimeSpan? duration = null)
+    {
+        UtilityTitleText.Text = TrimForIsland(title, 34);
+        UtilityDetailText.Text = TrimForIsland(detail, 78);
+        UtilityIconText.Text = icon;
+        UtilityProgressFill.Width = Math.Clamp(progress, 0, 1) * 210;
+        TransitionTo(IslandState.Utility);
+
+        _utilityCollapseCts?.Cancel();
+        _utilityCollapseCts?.Dispose();
+        _utilityCollapseCts = new CancellationTokenSource();
+        _ = CollapseUtilityLaterAsync(duration ?? TimeSpan.FromSeconds(3), _utilityCollapseCts.Token);
+    }
+
+    private async Task CollapseUtilityLaterAsync(TimeSpan delay, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(delay, cancellationToken);
+            if (!cancellationToken.IsCancellationRequested && _state is IslandState.Utility)
+            {
+                TransitionTo(_isHovering && _hasMediaSession ? IslandState.MediaExpanded : IslandState.MediaCompact);
+            }
+        }
+        catch (TaskCanceledException)
+        {
+        }
     }
 
     private async Task CollapseNotificationLaterAsync(CancellationToken cancellationToken)
@@ -404,43 +679,190 @@ public partial class MainWindow : Window
         }
     }
 
+    private async Task ShowIdleWeatherAsync()
+    {
+        if (_state is not IslandState.MediaCompact || _isMediaActive || _isCameraActive || _isMicrophoneActive || _isHovering)
+        {
+            return;
+        }
+
+        try
+        {
+            using var response = await HttpClient.GetAsync($"https://wttr.in/{WeatherCity}?format=j1");
+            response.EnsureSuccessStatusCode();
+            await using var stream = await response.Content.ReadAsStreamAsync();
+            using var json = await JsonDocument.ParseAsync(stream);
+            var current = json.RootElement.GetProperty("current_condition")[0];
+            var temp = current.GetProperty("temp_C").GetString();
+            var desc = current.GetProperty("weatherDesc")[0].GetProperty("value").GetString();
+            if (!string.IsNullOrWhiteSpace(temp) && !string.IsNullOrWhiteSpace(desc))
+            {
+                ShowUtility("Hava Durumu", $"{WeatherCity} {temp}C - {desc}", "W", 1, TimeSpan.FromSeconds(4));
+            }
+        }
+        catch
+        {
+        }
+    }
+
     private void MediaManager_CurrentSessionChanged(GlobalSystemMediaTransportControlsSessionManager sender, CurrentSessionChangedEventArgs args)
     {
         Dispatcher.Invoke(async () =>
         {
-            AttachMediaEvents(_mediaSession, detach: true);
-            _mediaSession = sender.GetCurrentSession();
-            AttachMediaEvents(_mediaSession);
+            SyncMediaSessions();
+            await SelectBestMediaSessionAsync();
             await RefreshMediaAsync();
         });
     }
 
-    private void AttachMediaEvents(GlobalSystemMediaTransportControlsSession? session, bool detach = false)
+    private void SyncMediaSessions()
     {
-        if (session is null)
+        if (_mediaManager is null)
         {
             return;
         }
 
-        if (detach)
+        foreach (var session in _mediaManager.GetSessions())
+        {
+            if (_observedMediaSessions.Add(session))
+            {
+                session.MediaPropertiesChanged += Session_MediaPropertiesChanged;
+                session.PlaybackInfoChanged += Session_PlaybackInfoChanged;
+            }
+        }
+    }
+
+    private void DetachAllMediaEvents()
+    {
+        foreach (var session in _observedMediaSessions)
         {
             session.MediaPropertiesChanged -= Session_MediaPropertiesChanged;
             session.PlaybackInfoChanged -= Session_PlaybackInfoChanged;
+        }
+
+        _observedMediaSessions.Clear();
+    }
+
+    private async Task SelectBestMediaSessionAsync()
+    {
+        if (_mediaManager is null)
+        {
+            _mediaSession = null;
             return;
         }
 
-        session.MediaPropertiesChanged += Session_MediaPropertiesChanged;
-        session.PlaybackInfoChanged += Session_PlaybackInfoChanged;
+        var sessions = _mediaManager.GetSessions().ToArray();
+        var scoredSessions = new List<(GlobalSystemMediaTransportControlsSession Session, int Score)>();
+        foreach (var session in sessions)
+        {
+            scoredSessions.Add((session, await GetMediaSessionScoreAsync(session)));
+        }
+
+        _mediaSession = scoredSessions
+            .OrderByDescending(item => item.Score)
+            .Select(item => item.Session)
+            .FirstOrDefault() ?? _mediaManager.GetCurrentSession();
+    }
+
+    private async Task<int> GetMediaSessionScoreAsync(GlobalSystemMediaTransportControlsSession session)
+    {
+        var score = 0;
+        var playbackStatus = session.GetPlaybackInfo().PlaybackStatus;
+        if (playbackStatus is GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing)
+        {
+            score += 100;
+        }
+        else if (playbackStatus is GlobalSystemMediaTransportControlsSessionPlaybackStatus.Paused)
+        {
+            score += 20;
+        }
+
+        if (session == _mediaManager?.GetCurrentSession())
+        {
+            score += 10;
+        }
+
+        if (string.Equals(session.SourceAppUserModelId, _mediaSession?.SourceAppUserModelId, StringComparison.OrdinalIgnoreCase))
+        {
+            score += 5;
+        }
+
+        try
+        {
+            var properties = await session.TryGetMediaPropertiesAsync();
+            var foregroundTitle = GetForegroundWindowTitle();
+            if (TitleLooksLikeForegroundMedia(properties.Title, foregroundTitle))
+            {
+                score += 80;
+            }
+        }
+        catch
+        {
+        }
+
+        return score;
+    }
+
+    private static bool TitleLooksLikeForegroundMedia(string? mediaTitle, string foregroundTitle)
+    {
+        if (string.IsNullOrWhiteSpace(mediaTitle) || string.IsNullOrWhiteSpace(foregroundTitle))
+        {
+            return false;
+        }
+
+        var normalizedMediaTitle = NormalizeComparableText(mediaTitle);
+        var normalizedForegroundTitle = NormalizeComparableText(foregroundTitle);
+        return normalizedMediaTitle.Length >= 8 &&
+               normalizedForegroundTitle.Contains(normalizedMediaTitle, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeComparableText(string value)
+    {
+        var suffixes = new[] { " - youtube", " - brave", " - google chrome", " - microsoft edge" };
+        var normalized = value.Trim();
+        foreach (var suffix in suffixes)
+        {
+            var index = normalized.LastIndexOf(suffix, StringComparison.OrdinalIgnoreCase);
+            if (index > 0)
+            {
+                normalized = normalized[..index];
+            }
+        }
+
+        return normalized.Trim();
+    }
+
+    private static string GetForegroundWindowTitle()
+    {
+        const int maxTitleLength = 512;
+        var handle = GetForegroundWindow();
+        if (handle == IntPtr.Zero)
+        {
+            return string.Empty;
+        }
+
+        var title = new System.Text.StringBuilder(maxTitleLength);
+        return GetWindowText(handle, title, title.Capacity) > 0 ? title.ToString() : string.Empty;
     }
 
     private void Session_MediaPropertiesChanged(GlobalSystemMediaTransportControlsSession sender, MediaPropertiesChangedEventArgs args)
     {
-        Dispatcher.Invoke(async () => await RefreshMediaAsync());
+        Dispatcher.Invoke(async () =>
+        {
+            SyncMediaSessions();
+            await SelectBestMediaSessionAsync();
+            await RefreshMediaAsync();
+        });
     }
 
     private void Session_PlaybackInfoChanged(GlobalSystemMediaTransportControlsSession sender, PlaybackInfoChangedEventArgs args)
     {
-        Dispatcher.Invoke(async () => await RefreshMediaAsync());
+        Dispatcher.Invoke(async () =>
+        {
+            SyncMediaSessions();
+            await SelectBestMediaSessionAsync();
+            await RefreshMediaAsync();
+        });
     }
 
     private async Task RefreshMediaAsync()
@@ -472,7 +894,9 @@ public partial class MainWindow : Window
 
             if (properties.Thumbnail is not null)
             {
-                AlbumArtImage.Source = await LoadBitmapAsync(properties.Thumbnail);
+                var albumArt = await LoadBitmapAsync(properties.Thumbnail);
+                AlbumArtImage.Source = albumArt;
+                ApplyAmbientColor(albumArt);
             }
         }
         catch
@@ -491,20 +915,22 @@ public partial class MainWindow : Window
         _isMediaActive = isActive;
         CompactMediaIndicator.Visibility = isActive ? Visibility.Visible : Visibility.Collapsed;
         PrivacyIndicator.Visibility = _isCameraActive || _isMicrophoneActive ? Visibility.Visible : Visibility.Collapsed;
+        CompactSplitDivider.Visibility = isActive && (_isCameraActive || _isMicrophoneActive) ? Visibility.Visible : Visibility.Collapsed;
 
         var mediaPulse = (Storyboard)Resources["MediaPlayingStoryboard"];
         if (isActive)
         {
             mediaPulse.Begin(this, true);
-            return;
         }
-
-        mediaPulse.Stop(this);
-        CompactBarOne.Height = 6;
-        CompactBarTwo.Height = 10;
-        CompactBarThree.Height = 18;
-        CompactBarFour.Height = 8;
-        CompactBarFive.Height = 14;
+        else
+        {
+            mediaPulse.Stop(this);
+            CompactBarOne.Height = 6;
+            CompactBarTwo.Height = 10;
+            CompactBarThree.Height = 18;
+            CompactBarFour.Height = 8;
+            CompactBarFive.Height = 14;
+        }
 
         if (changed && _state is IslandState.MediaCompact)
         {
@@ -584,6 +1010,57 @@ public partial class MainWindow : Window
         return bitmap;
     }
 
+    private void ApplyAmbientColor(BitmapSource? bitmap)
+    {
+        if (bitmap is null)
+        {
+            IslandStroke.BorderBrush = new SolidColorBrush(Color.FromArgb(18, 255, 255, 255));
+            CompactBarThree.Background = new SolidColorBrush(Color.FromRgb(29, 185, 84));
+            return;
+        }
+
+        try
+        {
+            var scaled = new TransformedBitmap(bitmap, new ScaleTransform(0.08, 0.08));
+            var converted = new FormatConvertedBitmap(scaled, PixelFormats.Bgra32, null, 0);
+            var stride = converted.PixelWidth * 4;
+            var pixels = new byte[stride * converted.PixelHeight];
+            converted.CopyPixels(pixels, stride, 0);
+
+            long red = 0;
+            long green = 0;
+            long blue = 0;
+            var count = 0;
+            for (var i = 0; i < pixels.Length; i += 4)
+            {
+                var b = pixels[i];
+                var g = pixels[i + 1];
+                var r = pixels[i + 2];
+                if (r + g + b < 70)
+                {
+                    continue;
+                }
+
+                red += r;
+                green += g;
+                blue += b;
+                count++;
+            }
+
+            if (count == 0)
+            {
+                return;
+            }
+
+            var color = Color.FromRgb((byte)(red / count), (byte)(green / count), (byte)(blue / count));
+            IslandStroke.BorderBrush = new SolidColorBrush(Color.FromArgb(80, color.R, color.G, color.B));
+            CompactBarThree.Background = new SolidColorBrush(Color.FromArgb(255, color.R, color.G, color.B));
+        }
+        catch
+        {
+        }
+    }
+
     private void Window_MouseEnter(object sender, System.Windows.Input.MouseEventArgs e)
     {
         _isHovering = true;
@@ -600,6 +1077,29 @@ public partial class MainWindow : Window
         {
             TransitionTo(IslandState.MediaCompact);
         }
+    }
+
+    private void Window_MouseWheel(object sender, System.Windows.Input.MouseWheelEventArgs e)
+    {
+        if (_defaultPlaybackDevice is null)
+        {
+            InitializeAudio();
+        }
+
+        if (_defaultPlaybackDevice is null)
+        {
+            return;
+        }
+
+        var delta = e.Delta > 0 ? 4 : -4;
+        _defaultPlaybackDevice.Volume = Math.Clamp(_defaultPlaybackDevice.Volume + delta, 0, 100);
+        ShowVolumeUtility(_defaultPlaybackDevice);
+        e.Handled = true;
+    }
+
+    private void ShowVolumeUtility(CoreAudioDevice device)
+    {
+        ShowUtility("Ses", $"{Math.Round(device.Volume)}% - {TrimForIsland(device.Name, 32)}", "V", device.Volume / 100, TimeSpan.FromSeconds(2));
     }
 
     private static string TrimForIsland(string value, int maxLength)
@@ -639,14 +1139,82 @@ public partial class MainWindow : Window
         }
     }
 
+    private void StartPomodoro(TimeSpan duration)
+    {
+        _pomodoroStartedAt = DateTimeOffset.Now;
+        _pomodoroEndsAt = DateTimeOffset.Now.Add(duration);
+        _pomodoroTimer?.Stop();
+        _pomodoroTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(1)
+        };
+        _pomodoroTimer.Tick += (_, _) => UpdatePomodoro();
+        _pomodoroTimer.Start();
+        UpdatePomodoro();
+    }
+
+    private void UpdatePomodoro()
+    {
+        if (_pomodoroEndsAt is null)
+        {
+            return;
+        }
+
+        var remaining = _pomodoroEndsAt.Value - DateTimeOffset.Now;
+        if (remaining <= TimeSpan.Zero)
+        {
+            _pomodoroTimer?.Stop();
+            _pomodoroStartedAt = null;
+            _pomodoroEndsAt = null;
+            ShowNotification("Pomodoro", "Sure bitti, kisa mola zamani");
+            return;
+        }
+
+        var totalSeconds = Math.Max(1, (_pomodoroEndsAt.Value - (_pomodoroStartedAt ?? DateTimeOffset.Now)).TotalSeconds);
+        var progress = 1 - remaining.TotalSeconds / totalSeconds;
+        ShowUtility("Pomodoro", $"{remaining.Minutes:00}:{remaining.Seconds:00} kaldi", "T", progress, TimeSpan.FromSeconds(1.2));
+    }
+
+    private void Island_MouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (FindVisualParent<Button>(e.OriginalSource as DependencyObject) is not null)
+        {
+            return;
+        }
+
+        if (_clipboardHistory.Count == 0)
+        {
+            return;
+        }
+
+        ShowUtility("Pano Gecmisi", TrimForIsland(string.Join(" | ", _clipboardHistory.Take(5)), 78), "C", 1, TimeSpan.FromSeconds(4));
+    }
+
+    private static T? FindVisualParent<T>(DependencyObject? child)
+        where T : DependencyObject
+    {
+        while (child is not null)
+        {
+            if (child is T match)
+            {
+                return match;
+            }
+
+            child = VisualTreeHelper.GetParent(child);
+        }
+
+        return null;
+    }
+
     private void TransitionTo(IslandState nextState)
     {
         _state = nextState;
         var (width, height) = nextState switch
         {
             IslandState.MediaCompact => (GetCompactWidth(), GetCompactHeight()),
-            IslandState.MediaExpanded => (500d, 108d),
-            IslandState.Notification => (300d, 48d),
+            IslandState.MediaExpanded => (510d, 108d),
+            IslandState.Notification => (330d, 56d),
+            IslandState.Utility => (330d, 56d),
             _ => (190d, 36d)
         };
 
@@ -654,6 +1222,7 @@ public partial class MainWindow : Window
         SetView(MediaCompactView, nextState is IslandState.MediaCompact);
         SetView(MediaExpandedView, nextState is IslandState.MediaExpanded);
         SetView(NotificationView, nextState is IslandState.Notification);
+        SetView(UtilityView, nextState is IslandState.Utility);
 
     }
 
@@ -661,10 +1230,10 @@ public partial class MainWindow : Window
     {
         if (_isMediaActive)
         {
-            return 124d;
+            return _isCameraActive || _isMicrophoneActive ? 146d : 124d;
         }
 
-        return _isCameraActive || _isMicrophoneActive ? 62d : 44d;
+        return _isCameraActive || _isMicrophoneActive ? 52d : 44d;
     }
 
     private double GetCompactHeight() => _isMediaActive ? 30d : 22d;
@@ -674,8 +1243,9 @@ public partial class MainWindow : Window
         return state switch
         {
             IslandState.MediaCompact => height / 2,
-            IslandState.MediaExpanded => 28d,
+            IslandState.MediaExpanded => 26d,
             IslandState.Notification => 16d,
+            IslandState.Utility => 16d,
             _ => height / 2
         };
     }
@@ -689,6 +1259,66 @@ public partial class MainWindow : Window
     private void ExitMenuItem_Click(object sender, RoutedEventArgs e)
     {
         Close();
+    }
+
+    private void NotificationSettingsMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        TryOpenSettings("ms-settings:privacy-notifications");
+    }
+
+    private async void SwitchAudioOutputMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        await SwitchAudioOutputAsync();
+    }
+
+    private void PomodoroFiveMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        StartPomodoro(TimeSpan.FromMinutes(5));
+    }
+
+    private void PomodoroTwentyFiveMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        StartPomodoro(TimeSpan.FromMinutes(25));
+    }
+
+    private async Task SwitchAudioOutputAsync()
+    {
+        try
+        {
+            _audioController ??= new CoreAudioController();
+            var devices = (await _audioController.GetPlaybackDevicesAsync(DeviceState.Active))
+                .Where(device => !device.IsDefaultDevice)
+                .ToArray();
+            if (devices.Length == 0)
+            {
+                ShowUtility("Ses Cihazi", "Baska aktif cikis yok", "V", 1);
+                return;
+            }
+
+            var next = devices[0];
+            await _audioController.SetDefaultDeviceAsync(next);
+            _defaultPlaybackDevice = next;
+            ShowUtility("Ses Cihazi", TrimForIsland(next.Name, 48), "V", next.Volume / 100, TimeSpan.FromSeconds(3));
+        }
+        catch
+        {
+            ShowUtility("Ses Cihazi", "Degistirilemedi", "V", 0);
+        }
+    }
+
+    private static void TryOpenSettings(string uri)
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = uri,
+                UseShellExecute = true
+            });
+        }
+        catch
+        {
+        }
     }
 
     private void RefreshStartupMenuState()
@@ -760,6 +1390,12 @@ public partial class MainWindow : Window
     private static extern IntPtr GetForegroundWindow();
 
     [DllImport("user32.dll")]
+    private static extern bool AddClipboardFormatListener(IntPtr hwnd);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    private static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
+
+    [DllImport("user32.dll")]
     private static extern bool GetWindowRect(IntPtr hWnd, out NativeRect lpRect);
 
     [DllImport("user32.dll")]
@@ -782,10 +1418,11 @@ public enum IslandState
 {
     MediaCompact,
     MediaExpanded,
-    Notification
+    Notification,
+    Utility
 }
 
-public sealed record NotificationPreview(string AppName, string Message);
+public sealed record NotificationPreview(string AppName, string Message, ImageSource? Logo);
 
 [StructLayout(LayoutKind.Sequential)]
 public struct NativeRect
