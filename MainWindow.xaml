@@ -280,9 +280,9 @@
             </Grid>
           </Grid>
 
-          <Grid x:Name="MediaExpandedView" Margin="16,9" Opacity="0" Visibility="Collapsed">
+          <Grid x:Name="MediaExpandedView" Margin="16,12" Opacity="0" Visibility="Collapsed">
             <Grid.RowDefinitions>
-              <RowDefinition Height="76" />
+              <RowDefinition Height="82" />
               <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
             <Grid.ColumnDefinitions>
@@ -290,7 +290,12 @@
               <ColumnDefinition Width="*" />
               <ColumnDefinition Width="146" />
             </Grid.ColumnDefinitions>
-            <Border Width="76" Height="76" CornerRadius="16" Background="#1D1D1F" ClipToBounds="True">
+            <Border Width="76"
+                    Height="76"
+                    CornerRadius="16"
+                    Background="#1D1D1F"
+                    ClipToBounds="True"
+                    VerticalAlignment="Center">
               <Image x:Name="AlbumArtImage" Stretch="UniformToFill" />
             </Border>
             <StackPanel Grid.Column="1" Margin="10,0,14,0" VerticalAlignment="Center">
@@ -350,13 +355,13 @@
             <Grid x:Name="TimerPanel"
                   Grid.Row="1"
                   Grid.ColumnSpan="3"
-                  Height="22"
+                  Height="24"
                   Margin="2,6,2,0"
                   Visibility="Collapsed">
               <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="40" />
+                <ColumnDefinition Width="42" />
                 <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="44" />
+                <ColumnDefinition Width="46" />
               </Grid.ColumnDefinitions>
               <TextBlock Text="Timer"
                          Foreground="#B8FFFFFF"
