@@ -301,6 +301,7 @@ public partial class MainWindow : Window
         MicrophoneDot.Visibility = microphoneActive ? Visibility.Visible : Visibility.Collapsed;
         PrivacyIndicator.Visibility = cameraActive || microphoneActive ? Visibility.Visible : Visibility.Collapsed;
         CompactSplitDivider.Visibility = _isMediaActive && (cameraActive || microphoneActive) ? Visibility.Visible : Visibility.Collapsed;
+        UpdateCompactMediaPlacement();
 
         if (_state is IslandState.MediaCompact)
         {
@@ -1091,6 +1092,7 @@ public partial class MainWindow : Window
         CompactMediaIndicator.Visibility = isActive ? Visibility.Visible : Visibility.Collapsed;
         PrivacyIndicator.Visibility = _isCameraActive || _isMicrophoneActive ? Visibility.Visible : Visibility.Collapsed;
         CompactSplitDivider.Visibility = isActive && (_isCameraActive || _isMicrophoneActive) ? Visibility.Visible : Visibility.Collapsed;
+        UpdateCompactMediaPlacement();
 
         var mediaPulse = (Storyboard)Resources["MediaPlayingStoryboard"];
         if (isActive)
@@ -1370,6 +1372,7 @@ public partial class MainWindow : Window
         var progress = Math.Clamp(1 - remaining.TotalSeconds / totalSeconds, 0, 1);
         CompactTimerText.Text = FormatRemaining(remaining);
         UpdateCompactTimerPlacement();
+        UpdateCompactMediaPlacement();
         CompactTimerText.Visibility = Visibility.Visible;
         TimerPanel.Visibility = Visibility.Visible;
         TimerTimeText.Text = FormatRemaining(remaining);
@@ -1392,6 +1395,23 @@ public partial class MainWindow : Window
         Grid.SetColumnSpan(CompactTimerText, 4);
         CompactTimerText.HorizontalAlignment = WpfHorizontalAlignment.Center;
         CompactTimerText.Margin = new Thickness(0);
+    }
+
+    private void UpdateCompactMediaPlacement()
+    {
+        if (_isMediaActive && !IsTimerActive && !_isCameraActive && !_isMicrophoneActive)
+        {
+            Grid.SetColumn(CompactMediaIndicator, 0);
+            Grid.SetColumnSpan(CompactMediaIndicator, 4);
+            CompactMediaIndicator.HorizontalAlignment = WpfHorizontalAlignment.Center;
+            CompactMediaIndicator.Margin = new Thickness(0);
+            return;
+        }
+
+        Grid.SetColumn(CompactMediaIndicator, 0);
+        Grid.SetColumnSpan(CompactMediaIndicator, 1);
+        CompactMediaIndicator.HorizontalAlignment = WpfHorizontalAlignment.Left;
+        CompactMediaIndicator.Margin = new Thickness(0);
     }
 
     private static string FormatRemaining(TimeSpan remaining)
