@@ -350,21 +350,22 @@
             <Grid x:Name="TimerPanel"
                   Grid.Row="1"
                   Grid.ColumnSpan="3"
-                  Height="24"
-                  Margin="0,8,0,0"
+                  Height="22"
+                  Margin="2,6,2,0"
                   Visibility="Collapsed">
               <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="40" />
                 <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="44" />
               </Grid.ColumnDefinitions>
               <TextBlock Text="Timer"
                          Foreground="#B8FFFFFF"
                          FontSize="10.5"
                          FontWeight="SemiBold"
                          VerticalAlignment="Center"
-                         Margin="0,0,10,0" />
-              <Border Grid.Column="1"
+                         HorizontalAlignment="Left" />
+              <Border x:Name="TimerProgressTrack"
+                      Grid.Column="1"
                       Height="4"
                       CornerRadius="2"
                       Background="#24FFFFFF"
@@ -382,7 +383,7 @@
                          FontSize="11"
                          FontWeight="SemiBold"
                          VerticalAlignment="Center"
-                         Margin="10,0,0,0" />
+                         HorizontalAlignment="Right" />
             </Grid>
           </Grid>
 

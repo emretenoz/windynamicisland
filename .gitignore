@@ -41,6 +41,7 @@ obj/
 .timer-center-build/
 .timer-true-center-build/
 .settings-panel-build/
+.timer-panel-polish-build/
 .vs/
 *.user
 *.suo

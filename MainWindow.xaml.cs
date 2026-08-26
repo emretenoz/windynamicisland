@@ -1277,7 +1277,8 @@ public partial class MainWindow : Window
         CompactTimerText.Visibility = Visibility.Visible;
         TimerPanel.Visibility = Visibility.Visible;
         TimerTimeText.Text = FormatRemaining(remaining);
-        TimerProgressFill.Width = progress * 374;
+        var progressWidth = TimerProgressTrack.ActualWidth > 0 ? TimerProgressTrack.ActualWidth : 360;
+        TimerProgressFill.Width = progress * progressWidth;
     }
 
     private void UpdateCompactTimerPlacement()
