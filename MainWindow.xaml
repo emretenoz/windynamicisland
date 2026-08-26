@@ -188,14 +188,14 @@
           <Separator />
           <MenuItem Header="Switch Audio Output"
                     Click="SwitchAudioOutputMenuItem_Click" />
-          <MenuItem Header="Pomodoro 5 min"
-                    Click="PomodoroFiveMenuItem_Click" />
-          <MenuItem Header="Pomodoro 25 min"
-                    Click="PomodoroTwentyFiveMenuItem_Click" />
-          <MenuItem Header="Custom Pomodoro..."
-                    Click="PomodoroCustomMenuItem_Click" />
-          <MenuItem Header="Stop Pomodoro"
-                    Click="PomodoroStopMenuItem_Click" />
+          <MenuItem Header="Timer 5 min"
+                    Click="TimerFiveMenuItem_Click" />
+          <MenuItem Header="Timer 25 min"
+                    Click="TimerTwentyFiveMenuItem_Click" />
+          <MenuItem Header="Custom Timer..."
+                    Click="TimerCustomMenuItem_Click" />
+          <MenuItem Header="Stop Timer"
+                    Click="TimerStopMenuItem_Click" />
           <Separator />
           <MenuItem Header="Exit"
                     Click="ExitMenuItem_Click" />
@@ -326,7 +326,7 @@
                 <Path Fill="White" Stretch="Uniform" Width="15" Height="15" Data="M 2 2 L 8 6 L 2 10 Z M 9 2 L 10.2 2 L 10.2 10 L 9 10 Z" />
               </Button>
             </StackPanel>
-            <Grid x:Name="PomodoroPanel"
+            <Grid x:Name="TimerPanel"
                   Grid.Row="1"
                   Grid.ColumnSpan="3"
                   Height="24"
@@ -337,7 +337,7 @@
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
               </Grid.ColumnDefinitions>
-              <TextBlock Text="Focus"
+              <TextBlock Text="Timer"
                          Foreground="#B8FFFFFF"
                          FontSize="10.5"
                          FontWeight="SemiBold"
@@ -348,13 +348,13 @@
                       CornerRadius="2"
                       Background="#24FFFFFF"
                       VerticalAlignment="Center">
-                <Border x:Name="PomodoroProgressFill"
+                <Border x:Name="TimerProgressFill"
                         Width="0"
                         HorizontalAlignment="Left"
                         CornerRadius="2"
                         Background="#FFD23F" />
               </Border>
-              <TextBlock x:Name="PomodoroTimeText"
+              <TextBlock x:Name="TimerTimeText"
                          Grid.Column="2"
                          Text="25:00"
                          Foreground="White"

@@ -33,6 +33,7 @@ obj/
 .screenshot-preview-build/
 .screenshot-aspect-build/
 .modern-menu-build/
+.timer-rename-build/
 .vs/
 *.user
 *.suo

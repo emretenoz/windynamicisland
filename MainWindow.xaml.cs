@@ -47,13 +47,13 @@ public partial class MainWindow : Window
     private DispatcherTimer? _fullscreenWatcher;
     private DispatcherTimer? _privacyWatcher;
     private DispatcherTimer? _notificationWatcher;
-    private DispatcherTimer? _pomodoroTimer;
+    private DispatcherTimer? _timerTimer;
     private DispatcherTimer? _weatherWatcher;
     private readonly HashSet<uint> _seenNotificationIds = new();
     private readonly List<string> _clipboardHistory = new();
     private IslandState _state = IslandState.MediaCompact;
-    private DateTimeOffset? _pomodoroStartedAt;
-    private DateTimeOffset? _pomodoroEndsAt;
+    private DateTimeOffset? _timerStartedAt;
+    private DateTimeOffset? _timerEndsAt;
     private bool _hasMediaSession;
     private bool _isMediaActive;
     private bool _isCameraActive;
@@ -64,7 +64,7 @@ public partial class MainWindow : Window
     private double _screenshotPreviewWidth = 510;
     private double _screenshotPreviewHeight = 190;
 
-    private bool IsPomodoroActive => _pomodoroEndsAt is not null;
+    private bool IsTimerActive => _timerEndsAt is not null;
 
     public MainWindow()
     {
@@ -108,7 +108,7 @@ public partial class MainWindow : Window
         _fullscreenWatcher?.Stop();
         _privacyWatcher?.Stop();
         _notificationWatcher?.Stop();
-        _pomodoroTimer?.Stop();
+        _timerTimer?.Stop();
         _weatherWatcher?.Stop();
     }
 
@@ -1127,16 +1127,16 @@ public partial class MainWindow : Window
     private void Window_MouseEnter(object sender, System.Windows.Input.MouseEventArgs e)
     {
         _isHovering = true;
-        if (_state is IslandState.MediaCompact && (_hasMediaSession || IsPomodoroActive))
+        if (_state is IslandState.MediaCompact && (_hasMediaSession || IsTimerActive))
         {
-            if (!_hasMediaSession && IsPomodoroActive)
+            if (!_hasMediaSession && IsTimerActive)
             {
-                SetTrackText("Pomodoro", "Focus timer");
+                SetTrackText("Timer", "Countdown");
                 SourceAppText.Text = "WinDynamicIsland";
                 AlbumArtImage.Source = null;
             }
 
-            UpdatePomodoro();
+            UpdateTimer();
             TransitionTo(IslandState.MediaExpanded);
         }
     }
@@ -1210,36 +1210,36 @@ public partial class MainWindow : Window
         }
     }
 
-    private void StartPomodoro(TimeSpan duration)
+    private void StartTimer(TimeSpan duration)
     {
-        _pomodoroStartedAt = DateTimeOffset.Now;
-        _pomodoroEndsAt = DateTimeOffset.Now.Add(duration);
-        _pomodoroTimer?.Stop();
-        _pomodoroTimer = new DispatcherTimer
+        _timerStartedAt = DateTimeOffset.Now;
+        _timerEndsAt = DateTimeOffset.Now.Add(duration);
+        _timerTimer?.Stop();
+        _timerTimer = new DispatcherTimer
         {
             Interval = TimeSpan.FromSeconds(1)
         };
-        _pomodoroTimer.Tick += (_, _) => UpdatePomodoro();
-        _pomodoroTimer.Start();
-        ShowUtility("Pomodoro", $"{Math.Round(duration.TotalMinutes)} dakika basladi", "T", 1, TimeSpan.FromSeconds(1.2));
-        UpdatePomodoro();
+        _timerTimer.Tick += (_, _) => UpdateTimer();
+        _timerTimer.Start();
+        ShowUtility("Timer", $"{Math.Round(duration.TotalMinutes)} dakika basladi", "T", 1, TimeSpan.FromSeconds(1.2));
+        UpdateTimer();
     }
 
-    private void UpdatePomodoro()
+    private void UpdateTimer()
     {
-        if (_pomodoroEndsAt is null)
+        if (_timerEndsAt is null)
         {
             return;
         }
 
-        var remaining = _pomodoroEndsAt.Value - DateTimeOffset.Now;
+        var remaining = _timerEndsAt.Value - DateTimeOffset.Now;
         if (remaining <= TimeSpan.Zero)
         {
-            _pomodoroTimer?.Stop();
-            _pomodoroStartedAt = null;
-            _pomodoroEndsAt = null;
-            PomodoroPanel.Visibility = Visibility.Collapsed;
-            ShowNotification("Pomodoro", "Sure bitti, kisa mola zamani");
+            _timerTimer?.Stop();
+            _timerStartedAt = null;
+            _timerEndsAt = null;
+            TimerPanel.Visibility = Visibility.Collapsed;
+            ShowNotification("Timer", "Sure bitti");
             if (_state is IslandState.MediaExpanded && !_hasMediaSession)
             {
                 TransitionTo(IslandState.MediaCompact);
@@ -1247,11 +1247,11 @@ public partial class MainWindow : Window
             return;
         }
 
-        var totalSeconds = Math.Max(1, (_pomodoroEndsAt.Value - (_pomodoroStartedAt ?? DateTimeOffset.Now)).TotalSeconds);
+        var totalSeconds = Math.Max(1, (_timerEndsAt.Value - (_timerStartedAt ?? DateTimeOffset.Now)).TotalSeconds);
         var progress = Math.Clamp(1 - remaining.TotalSeconds / totalSeconds, 0, 1);
-        PomodoroPanel.Visibility = Visibility.Visible;
-        PomodoroTimeText.Text = FormatRemaining(remaining);
-        PomodoroProgressFill.Width = progress * 374;
+        TimerPanel.Visibility = Visibility.Visible;
+        TimerTimeText.Text = FormatRemaining(remaining);
+        TimerProgressFill.Width = progress * 374;
     }
 
     private static string FormatRemaining(TimeSpan remaining)
@@ -1264,13 +1264,13 @@ public partial class MainWindow : Window
         return $"{remaining.Minutes:00}:{remaining.Seconds:00}";
     }
 
-    private void StopPomodoro()
+    private void StopTimer()
     {
-        _pomodoroTimer?.Stop();
-        _pomodoroStartedAt = null;
-        _pomodoroEndsAt = null;
-        PomodoroPanel.Visibility = Visibility.Collapsed;
-        ShowUtility("Pomodoro", "Durduruldu", "T", 0, TimeSpan.FromSeconds(1.3));
+        _timerTimer?.Stop();
+        _timerStartedAt = null;
+        _timerEndsAt = null;
+        TimerPanel.Visibility = Visibility.Collapsed;
+        ShowUtility("Timer", "Durduruldu", "T", 0, TimeSpan.FromSeconds(1.3));
     }
 
     private void Island_MouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
@@ -1310,7 +1310,7 @@ public partial class MainWindow : Window
         var (width, height) = nextState switch
         {
             IslandState.MediaCompact => (GetCompactWidth(), GetCompactHeight()),
-            IslandState.MediaExpanded => (510d, IsPomodoroActive ? 140d : 108d),
+            IslandState.MediaExpanded => (510d, IsTimerActive ? 140d : 108d),
             IslandState.Notification => (330d, 56d),
             IslandState.Utility => (330d, 56d),
             IslandState.ScreenshotPreview => (_screenshotPreviewWidth, _screenshotPreviewHeight),
@@ -1318,7 +1318,7 @@ public partial class MainWindow : Window
         };
 
         AnimateIsland(width, height, GetCornerRadius(nextState, height));
-        PomodoroPanel.Visibility = nextState is IslandState.MediaExpanded && IsPomodoroActive ? Visibility.Visible : Visibility.Collapsed;
+        TimerPanel.Visibility = nextState is IslandState.MediaExpanded && IsTimerActive ? Visibility.Visible : Visibility.Collapsed;
         SetView(MediaCompactView, nextState is IslandState.MediaCompact);
         SetView(MediaExpandedView, nextState is IslandState.MediaExpanded);
         SetView(NotificationView, nextState is IslandState.Notification);
@@ -1373,30 +1373,30 @@ public partial class MainWindow : Window
         await SwitchAudioOutputAsync();
     }
 
-    private void PomodoroFiveMenuItem_Click(object sender, RoutedEventArgs e)
+    private void TimerFiveMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        StartPomodoro(TimeSpan.FromMinutes(5));
+        StartTimer(TimeSpan.FromMinutes(5));
     }
 
-    private void PomodoroTwentyFiveMenuItem_Click(object sender, RoutedEventArgs e)
+    private void TimerTwentyFiveMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        StartPomodoro(TimeSpan.FromMinutes(25));
+        StartTimer(TimeSpan.FromMinutes(25));
     }
 
-    private void PomodoroCustomMenuItem_Click(object sender, RoutedEventArgs e)
+    private void TimerCustomMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        var input = Interaction.InputBox("Pomodoro kac dakika olsun?", "Custom Pomodoro", "25");
+        var input = Interaction.InputBox("Timer kac dakika olsun?", "Custom Timer", "10");
         if (!double.TryParse(input, out var minutes) || minutes <= 0)
         {
             return;
         }
 
-        StartPomodoro(TimeSpan.FromMinutes(Math.Clamp(minutes, 1, 240)));
+        StartTimer(TimeSpan.FromMinutes(Math.Clamp(minutes, 1, 240)));
     }
 
-    private void PomodoroStopMenuItem_Click(object sender, RoutedEventArgs e)
+    private void TimerStopMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        StopPomodoro();
+        StopTimer();
     }
 
     private async Task SwitchAudioOutputAsync()
