@@ -6,30 +6,39 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
+using Microsoft.Win32;
 using Windows.Foundation.Metadata;
 using Windows.Media.Control;
 using Windows.Storage.Streams;
 using Windows.UI.Notifications;
 using Windows.UI.Notifications.Management;
-using WinDynamicIsland.Models;
-using WinDynamicIsland.Services;
 
 namespace WinDynamicIsland;
 
 public partial class MainWindow : Window
 {
+    private const string StartupRegistryPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
+    private const string StartupRegistryName = "WinDynamicIsland";
+    private const string CapabilityAccessPath = @"Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore";
     private const int GwlExStyle = -20;
     private const int WsExToolWindow = 0x00000080;
     private const int WmNchittest = 0x0084;
     private const int Httransparent = -1;
+    private const int SwShowMinimized = 2;
+    private const uint MonitorDefaultToNearest = 0x00000002;
 
-    private readonly AudioRecorderService _audioService = new();
-    private readonly AgentApiService _agentService = new();
     private GlobalSystemMediaTransportControlsSessionManager? _mediaManager;
     private GlobalSystemMediaTransportControlsSession? _mediaSession;
     private UserNotificationListener? _notificationListener;
     private CancellationTokenSource? _notificationCollapseCts;
+    private DispatcherTimer? _fullscreenWatcher;
+    private DispatcherTimer? _privacyWatcher;
     private IslandState _state = IslandState.MediaCompact;
+    private bool _hasMediaSession;
+    private bool _isMediaActive;
+    private bool _isCameraActive;
+    private bool _isMicrophoneActive;
     private bool _isHovering;
 
     public MainWindow()
@@ -42,6 +51,9 @@ public partial class MainWindow : Window
         PositionAtTopCenter();
         HideFromAltTab();
         AddTransparentHitTestSupport();
+        RefreshStartupMenuState();
+        StartFullscreenWatcher();
+        StartPrivacyWatcher();
         await InitializeMediaAsync();
         await InitializeNotificationsAsync();
         TransitionTo(IslandState.MediaCompact);
@@ -49,7 +61,6 @@ public partial class MainWindow : Window
 
     private void Window_Closed(object? sender, EventArgs e)
     {
-        _audioService.Dispose();
         if (_mediaManager is not null)
         {
             _mediaManager.CurrentSessionChanged -= MediaManager_CurrentSessionChanged;
@@ -62,6 +73,8 @@ public partial class MainWindow : Window
 
         _notificationCollapseCts?.Cancel();
         _notificationCollapseCts?.Dispose();
+        _fullscreenWatcher?.Stop();
+        _privacyWatcher?.Stop();
     }
 
     private void PositionAtTopCenter()
@@ -83,6 +96,180 @@ public partial class MainWindow : Window
         {
             source.AddHook(WndProc);
         }
+    }
+
+    private void StartFullscreenWatcher()
+    {
+        _fullscreenWatcher = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(700)
+        };
+        _fullscreenWatcher.Tick += (_, _) => UpdateFullscreenVisibility();
+        _fullscreenWatcher.Start();
+    }
+
+    private void StartPrivacyWatcher()
+    {
+        _privacyWatcher = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(900)
+        };
+        _privacyWatcher.Tick += (_, _) => UpdatePrivacyIndicators();
+        _privacyWatcher.Start();
+        UpdatePrivacyIndicators();
+    }
+
+    private void UpdatePrivacyIndicators()
+    {
+        var cameraActive = IsCapabilityInUse("webcam");
+        var microphoneActive = IsCapabilityInUse("microphone");
+        if (_isCameraActive == cameraActive && _isMicrophoneActive == microphoneActive)
+        {
+            return;
+        }
+
+        _isCameraActive = cameraActive;
+        _isMicrophoneActive = microphoneActive;
+
+        CameraDot.Visibility = cameraActive ? Visibility.Visible : Visibility.Collapsed;
+        MicrophoneDot.Visibility = microphoneActive ? Visibility.Visible : Visibility.Collapsed;
+        PrivacyIndicator.Visibility = cameraActive || microphoneActive ? Visibility.Visible : Visibility.Collapsed;
+
+        if (_state is IslandState.MediaCompact)
+        {
+            AnimateIsland(GetCompactWidth(), GetCompactHeight(), GetCompactHeight() / 2);
+        }
+    }
+
+    private static bool IsCapabilityInUse(string capabilityName)
+    {
+        return IsCapabilityInUse(RegistryHive.CurrentUser, capabilityName) ||
+               IsCapabilityInUse(RegistryHive.LocalMachine, capabilityName);
+    }
+
+    private static bool IsCapabilityInUse(RegistryHive hive, string capabilityName)
+    {
+        try
+        {
+            using var baseKey = RegistryKey.OpenBaseKey(hive, RegistryView.Registry64);
+            using var capabilityKey = baseKey.OpenSubKey($@"{CapabilityAccessPath}\{capabilityName}");
+            return capabilityKey is not null && IsCapabilityKeyInUse(capabilityKey);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool IsCapabilityKeyInUse(RegistryKey key)
+    {
+        if (IsLastUsedOpen(key))
+        {
+            return true;
+        }
+
+        foreach (var subKeyName in key.GetSubKeyNames())
+        {
+            using var subKey = key.OpenSubKey(subKeyName);
+            if (subKey is not null && IsCapabilityKeyInUse(subKey))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsLastUsedOpen(RegistryKey key)
+    {
+        var start = ToLong(key.GetValue("LastUsedTimeStart"));
+        var stop = key.GetValue("LastUsedTimeStop");
+        var stopValue = ToLong(stop);
+
+        if (start > 0 && stopValue == 0)
+        {
+            return true;
+        }
+
+        if (start > 0 && stopValue < 0 && WasStartedVeryRecently(start))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static long ToLong(object? value)
+    {
+        return value switch
+        {
+            long number => number,
+            int number => number,
+            string text when long.TryParse(text, out var number) => number,
+            _ => -1
+        };
+    }
+
+    private static bool WasStartedVeryRecently(long fileTime)
+    {
+        try
+        {
+            return DateTime.UtcNow - DateTime.FromFileTimeUtc(fileTime) < TimeSpan.FromSeconds(8);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private void UpdateFullscreenVisibility()
+    {
+        var shouldHide = IsAnotherWindowFullscreen();
+        if (shouldHide && Visibility != Visibility.Hidden)
+        {
+            Visibility = Visibility.Hidden;
+            return;
+        }
+
+        if (!shouldHide && Visibility != Visibility.Visible)
+        {
+            Visibility = Visibility.Visible;
+        }
+    }
+
+    private bool IsAnotherWindowFullscreen()
+    {
+        var foreground = GetForegroundWindow();
+        var ownHandle = new WindowInteropHelper(this).Handle;
+        if (foreground == IntPtr.Zero ||
+            foreground == ownHandle ||
+            !IsWindowVisible(foreground) ||
+            IsIconic(foreground) ||
+            !GetWindowRect(foreground, out var windowRect))
+        {
+            return false;
+        }
+
+        var monitor = MonitorFromWindow(foreground, MonitorDefaultToNearest);
+        var monitorInfo = MonitorInfo.Create();
+        if (monitor == IntPtr.Zero || !GetMonitorInfo(monitor, ref monitorInfo))
+        {
+            return false;
+        }
+
+        var monitorRect = monitorInfo.Monitor;
+        const int tolerance = 2;
+        var fillsMonitor = windowRect.Left <= monitorRect.Left + tolerance &&
+               windowRect.Top <= monitorRect.Top + tolerance &&
+               windowRect.Right >= monitorRect.Right - tolerance &&
+               windowRect.Bottom >= monitorRect.Bottom - tolerance;
+        if (!fillsMonitor)
+        {
+            return false;
+        }
+
+        var placement = WindowPlacement.Create();
+        return !GetWindowPlacement(foreground, ref placement) || placement.ShowCmd != SwShowMinimized;
     }
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -192,11 +379,6 @@ public partial class MainWindow : Window
 
     private void ShowNotification(string appName, string message)
     {
-        if (_state is IslandState.Recording or IslandState.Thinking or IslandState.Response)
-        {
-            return;
-        }
-
         NotificationAppText.Text = TrimForIsland(appName, 34);
         NotificationMessageText.Text = TrimForIsland(message, 78);
         TransitionTo(IslandState.Notification);
@@ -243,13 +425,20 @@ public partial class MainWindow : Window
         if (detach)
         {
             session.MediaPropertiesChanged -= Session_MediaPropertiesChanged;
+            session.PlaybackInfoChanged -= Session_PlaybackInfoChanged;
             return;
         }
 
         session.MediaPropertiesChanged += Session_MediaPropertiesChanged;
+        session.PlaybackInfoChanged += Session_PlaybackInfoChanged;
     }
 
     private void Session_MediaPropertiesChanged(GlobalSystemMediaTransportControlsSession sender, MediaPropertiesChangedEventArgs args)
+    {
+        Dispatcher.Invoke(async () => await RefreshMediaAsync());
+    }
+
+    private void Session_PlaybackInfoChanged(GlobalSystemMediaTransportControlsSession sender, PlaybackInfoChangedEventArgs args)
     {
         Dispatcher.Invoke(async () => await RefreshMediaAsync());
     }
@@ -260,15 +449,26 @@ public partial class MainWindow : Window
         {
             if (_mediaSession is null)
             {
-                SetTrackText("No media", "Click to talk");
+                _hasMediaSession = false;
+                SetMediaActive(false);
+                SetPlayPauseIcon(false);
+                SetTrackText("No media", "");
+                SourceAppText.Text = "Media";
                 AlbumArtImage.Source = null;
                 return;
             }
+
+            _hasMediaSession = true;
+            var playbackInfo = _mediaSession.GetPlaybackInfo();
+            var isPlaying = playbackInfo.PlaybackStatus is GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing;
+            SetMediaActive(isPlaying);
+            SetPlayPauseIcon(isPlaying);
 
             var properties = await _mediaSession.TryGetMediaPropertiesAsync();
             var title = string.IsNullOrWhiteSpace(properties.Title) ? "Media playing" : properties.Title;
             var artist = string.IsNullOrWhiteSpace(properties.Artist) ? properties.AlbumArtist : properties.Artist;
             SetTrackText(title, string.IsNullOrWhiteSpace(artist) ? "Unknown artist" : artist);
+            SourceAppText.Text = GetFriendlySourceAppName(_mediaSession.SourceAppUserModelId);
 
             if (properties.Thumbnail is not null)
             {
@@ -277,14 +477,95 @@ public partial class MainWindow : Window
         }
         catch
         {
-            SetTrackText("Media unavailable", "Click to talk");
+            _hasMediaSession = false;
+            SetMediaActive(false);
+            SetPlayPauseIcon(false);
+            SetTrackText("No media", "");
+            SourceAppText.Text = "Media";
         }
+    }
+
+    private void SetMediaActive(bool isActive)
+    {
+        var changed = _isMediaActive != isActive;
+        _isMediaActive = isActive;
+        CompactMediaIndicator.Visibility = isActive ? Visibility.Visible : Visibility.Collapsed;
+        PrivacyIndicator.Visibility = _isCameraActive || _isMicrophoneActive ? Visibility.Visible : Visibility.Collapsed;
+
+        var mediaPulse = (Storyboard)Resources["MediaPlayingStoryboard"];
+        if (isActive)
+        {
+            mediaPulse.Begin(this, true);
+            return;
+        }
+
+        mediaPulse.Stop(this);
+        CompactBarOne.Height = 6;
+        CompactBarTwo.Height = 10;
+        CompactBarThree.Height = 18;
+        CompactBarFour.Height = 8;
+        CompactBarFive.Height = 14;
+
+        if (changed && _state is IslandState.MediaCompact)
+        {
+            AnimateIsland(GetCompactWidth(), GetCompactHeight(), GetCompactHeight() / 2);
+        }
+    }
+
+    private void SetPlayPauseIcon(bool isPlaying)
+    {
+        PlayPauseIconPath.Data = Geometry.Parse(isPlaying
+            ? "M 2 1 L 2 12 L 5 12 L 5 1 Z M 8 1 L 8 12 L 11 12 L 11 1 Z"
+            : "M 3 1.5 L 11 6.5 L 3 11.5 Z");
     }
 
     private void SetTrackText(string title, string artist)
     {
         ExpandedTitleText.Text = title;
         ExpandedArtistText.Text = artist;
+    }
+
+    private static string GetFriendlySourceAppName(string sourceAppUserModelId)
+    {
+        if (string.IsNullOrWhiteSpace(sourceAppUserModelId))
+        {
+            return "Media";
+        }
+
+        var source = sourceAppUserModelId.ToLowerInvariant();
+        if (source.Contains("spotify"))
+        {
+            return "Spotify";
+        }
+
+        if (source.Contains("chrome"))
+        {
+            return "Chrome";
+        }
+
+        if (source.Contains("edge"))
+        {
+            return "Edge";
+        }
+
+        if (source.Contains("firefox"))
+        {
+            return "Firefox";
+        }
+
+        if (source.Contains("vlc"))
+        {
+            return "VLC";
+        }
+
+        if (source.Contains("zune"))
+        {
+            return "Media Player";
+        }
+
+        var trimmed = sourceAppUserModelId.Split('!', StringSplitOptions.RemoveEmptyEntries)[0];
+        var lastSegment = trimmed.Split('.', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? trimmed;
+        return TrimForIsland(lastSegment.Replace("_", " "), 22);
     }
 
     private static async Task<BitmapImage?> LoadBitmapAsync(IRandomAccessStreamReference thumbnail)
@@ -306,7 +587,7 @@ public partial class MainWindow : Window
     private void Window_MouseEnter(object sender, System.Windows.Input.MouseEventArgs e)
     {
         _isHovering = true;
-        if (_state is IslandState.MediaCompact)
+        if (_state is IslandState.MediaCompact && _hasMediaSession)
         {
             TransitionTo(IslandState.MediaExpanded);
         }
@@ -319,70 +600,6 @@ public partial class MainWindow : Window
         {
             TransitionTo(IslandState.MediaCompact);
         }
-    }
-
-    private async void Island_MouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
-    {
-        if (FindVisualParent<Button>(e.OriginalSource as DependencyObject) is not null)
-        {
-            return;
-        }
-
-        if (_state is IslandState.Thinking or IslandState.Response)
-        {
-            return;
-        }
-
-        if (_state is IslandState.Recording)
-        {
-            await StopAndSendAsync();
-            return;
-        }
-
-        StartRecording();
-    }
-
-    private void StartRecording()
-    {
-        _audioService.StartRecording();
-        TransitionTo(IslandState.Recording);
-    }
-
-    private async Task StopAndSendAsync()
-    {
-        try
-        {
-            var audio = await _audioService.StopRecordingAsync();
-            TransitionTo(IslandState.Thinking);
-
-            var response = await _agentService.SendVoiceAsync(audio);
-            await ShowAndPlayResponseAsync(response);
-        }
-        catch (Exception ex)
-        {
-            ResponseText.Text = ex.Message;
-            TransitionTo(IslandState.Response);
-            await Task.Delay(2500);
-            TransitionTo(_isHovering ? IslandState.MediaExpanded : IslandState.MediaCompact);
-        }
-    }
-
-    private async Task ShowAndPlayResponseAsync(AgentResponse response)
-    {
-        ResponseText.Text = string.IsNullOrWhiteSpace(response.Text) ? "Response received" : response.Text;
-        TransitionTo(IslandState.Response);
-
-        var audioBytes = response.AudioBytes ?? await _agentService.DownloadAudioAsync(response.AudioUrl);
-        if (audioBytes is not null)
-        {
-            await _audioService.PlayAudioAsync(audioBytes, response.AudioContentType);
-        }
-        else
-        {
-            await Task.Delay(3500);
-        }
-
-        TransitionTo(_isHovering ? IslandState.MediaExpanded : IslandState.MediaCompact);
     }
 
     private static string TrimForIsland(string value, int maxLength)
@@ -427,36 +644,76 @@ public partial class MainWindow : Window
         _state = nextState;
         var (width, height) = nextState switch
         {
-            IslandState.MediaCompact => (190d, 36d),
-            IslandState.MediaExpanded => (340d, 66d),
-            IslandState.Recording => (280d, 45d),
-            IslandState.Thinking => (280d, 45d),
-            IslandState.Response => (330d, 66d),
-            IslandState.Notification => (330d, 52d),
+            IslandState.MediaCompact => (GetCompactWidth(), GetCompactHeight()),
+            IslandState.MediaExpanded => (500d, 108d),
+            IslandState.Notification => (300d, 48d),
             _ => (190d, 36d)
         };
 
-        AnimateIsland(width, height, height / 2);
+        AnimateIsland(width, height, GetCornerRadius(nextState, height));
         SetView(MediaCompactView, nextState is IslandState.MediaCompact);
         SetView(MediaExpandedView, nextState is IslandState.MediaExpanded);
-        SetView(RecordingView, nextState is IslandState.Recording);
-        SetView(ThinkingView, nextState is IslandState.Thinking);
-        SetView(ResponseView, nextState is IslandState.Response);
         SetView(NotificationView, nextState is IslandState.Notification);
 
-        var pulse = (Storyboard)Resources["PulseStoryboard"];
-        if (nextState is IslandState.Recording)
+    }
+
+    private double GetCompactWidth()
+    {
+        if (_isMediaActive)
         {
-            GlowBorder.Opacity = 0.45;
-            pulse.Begin(this, true);
+            return 124d;
         }
-        else
+
+        return _isCameraActive || _isMicrophoneActive ? 62d : 44d;
+    }
+
+    private double GetCompactHeight() => _isMediaActive ? 30d : 22d;
+
+    private double GetCornerRadius(IslandState state, double height)
+    {
+        return state switch
         {
-            pulse.Stop(this);
-            GlowBorder.Opacity = 0;
-            GlowScale.ScaleX = 1;
-            GlowScale.ScaleY = 1;
+            IslandState.MediaCompact => height / 2,
+            IslandState.MediaExpanded => 28d,
+            IslandState.Notification => 16d,
+            _ => height / 2
+        };
+    }
+
+    private void StartupMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        SetStartWithWindows(StartupMenuItem.IsChecked);
+        RefreshStartupMenuState();
+    }
+
+    private void ExitMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        Close();
+    }
+
+    private void RefreshStartupMenuState()
+    {
+        StartupMenuItem.IsChecked = IsStartWithWindowsEnabled();
+    }
+
+    private static bool IsStartWithWindowsEnabled()
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(StartupRegistryPath, writable: false);
+        var configuredPath = key?.GetValue(StartupRegistryName) as string;
+        return string.Equals(configuredPath?.Trim('"'), Environment.ProcessPath, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void SetStartWithWindows(bool enabled)
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(StartupRegistryPath, writable: true) ??
+                        Registry.CurrentUser.CreateSubKey(StartupRegistryPath);
+        if (enabled && !string.IsNullOrWhiteSpace(Environment.ProcessPath))
+        {
+            key?.SetValue(StartupRegistryName, $"\"{Environment.ProcessPath}\"");
+            return;
         }
+
+        key?.DeleteValue(StartupRegistryName, throwOnMissingValue: false);
     }
 
     private void AnimateIsland(double width, double height, double radius)
@@ -493,37 +750,91 @@ public partial class MainWindow : Window
         }
     }
 
-    private static T? FindVisualParent<T>(DependencyObject? child)
-        where T : DependencyObject
-    {
-        while (child is not null)
-        {
-            if (child is T match)
-            {
-                return match;
-            }
-
-            child = VisualTreeHelper.GetParent(child);
-        }
-
-        return null;
-    }
-
     [DllImport("user32.dll")]
     private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
 
     [DllImport("user32.dll")]
     private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern bool GetWindowRect(IntPtr hWnd, out NativeRect lpRect);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsIconic(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool GetWindowPlacement(IntPtr hWnd, ref WindowPlacement lpwndpl);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MonitorInfo lpmi);
 }
 
 public enum IslandState
 {
     MediaCompact,
     MediaExpanded,
-    Recording,
-    Thinking,
-    Response,
     Notification
 }
 
 public sealed record NotificationPreview(string AppName, string Message);
+
+[StructLayout(LayoutKind.Sequential)]
+public struct NativeRect
+{
+    public int Left;
+    public int Top;
+    public int Right;
+    public int Bottom;
+}
+
+[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+public struct MonitorInfo
+{
+    public int Size;
+    public NativeRect Monitor;
+    public NativeRect WorkArea;
+    public uint Flags;
+
+    public static MonitorInfo Create()
+    {
+        return new MonitorInfo
+        {
+            Size = Marshal.SizeOf<MonitorInfo>()
+        };
+    }
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public struct WindowPlacement
+{
+    public int Length;
+    public int Flags;
+    public int ShowCmd;
+    public NativePoint MinPosition;
+    public NativePoint MaxPosition;
+    public NativeRect NormalPosition;
+
+    public static WindowPlacement Create()
+    {
+        return new WindowPlacement
+        {
+            Length = Marshal.SizeOf<WindowPlacement>()
+        };
+    }
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public struct NativePoint
+{
+    public int X;
+    public int Y;
+}
