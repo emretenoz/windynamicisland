@@ -1337,7 +1337,7 @@ public partial class MainWindow : Window
         {
             if (IsTimerActive)
             {
-                return _isCameraActive || _isMicrophoneActive ? 202d : 176d;
+                return _isCameraActive || _isMicrophoneActive ? 180d : 154d;
             }
 
             return _isCameraActive || _isMicrophoneActive ? 146d : 124d;
@@ -1345,7 +1345,7 @@ public partial class MainWindow : Window
 
         if (IsTimerActive)
         {
-            return _isCameraActive || _isMicrophoneActive ? 120d : 94d;
+            return _isCameraActive || _isMicrophoneActive ? 108d : 82d;
         }
 
         return _isCameraActive || _isMicrophoneActive ? 52d : 44d;
