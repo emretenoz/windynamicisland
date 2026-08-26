@@ -11,6 +11,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using AudioSwitcher.AudioApi;
 using AudioSwitcher.AudioApi.CoreAudio;
+using Microsoft.VisualBasic;
 using Microsoft.Win32;
 using Windows.Foundation.Metadata;
 using Windows.Media.Control;
@@ -1150,6 +1151,7 @@ public partial class MainWindow : Window
         };
         _pomodoroTimer.Tick += (_, _) => UpdatePomodoro();
         _pomodoroTimer.Start();
+        ShowPomodoroBubble();
         UpdatePomodoro();
     }
 
@@ -1166,13 +1168,49 @@ public partial class MainWindow : Window
             _pomodoroTimer?.Stop();
             _pomodoroStartedAt = null;
             _pomodoroEndsAt = null;
+            HidePomodoroBubble();
             ShowNotification("Pomodoro", "Sure bitti, kisa mola zamani");
             return;
         }
 
-        var totalSeconds = Math.Max(1, (_pomodoroEndsAt.Value - (_pomodoroStartedAt ?? DateTimeOffset.Now)).TotalSeconds);
-        var progress = 1 - remaining.TotalSeconds / totalSeconds;
-        ShowUtility("Pomodoro", $"{remaining.Minutes:00}:{remaining.Seconds:00} kaldi", "T", progress, TimeSpan.FromSeconds(1.2));
+        PomodoroBubbleText.Text = FormatRemaining(remaining);
+    }
+
+    private static string FormatRemaining(TimeSpan remaining)
+    {
+        if (remaining.TotalHours >= 1)
+        {
+            return $"{(int)remaining.TotalHours}:{remaining.Minutes:00}";
+        }
+
+        return $"{remaining.Minutes:00}:{remaining.Seconds:00}";
+    }
+
+    private void ShowPomodoroBubble()
+    {
+        PomodoroBubble.Visibility = Visibility.Visible;
+        PomodoroBubble.BeginAnimation(OpacityProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(180))
+        {
+            EasingFunction = (QuadraticEase)Resources["IslandEase"]
+        });
+    }
+
+    private void HidePomodoroBubble()
+    {
+        var animation = new DoubleAnimation(0, TimeSpan.FromMilliseconds(160))
+        {
+            EasingFunction = (QuadraticEase)Resources["IslandEase"]
+        };
+        animation.Completed += (_, _) => PomodoroBubble.Visibility = Visibility.Collapsed;
+        PomodoroBubble.BeginAnimation(OpacityProperty, animation);
+    }
+
+    private void StopPomodoro()
+    {
+        _pomodoroTimer?.Stop();
+        _pomodoroStartedAt = null;
+        _pomodoroEndsAt = null;
+        HidePomodoroBubble();
     }
 
     private void Island_MouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
@@ -1279,6 +1317,22 @@ public partial class MainWindow : Window
     private void PomodoroTwentyFiveMenuItem_Click(object sender, RoutedEventArgs e)
     {
         StartPomodoro(TimeSpan.FromMinutes(25));
+    }
+
+    private void PomodoroCustomMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        var input = Interaction.InputBox("Pomodoro kac dakika olsun?", "Custom Pomodoro", "25");
+        if (!double.TryParse(input, out var minutes) || minutes <= 0)
+        {
+            return;
+        }
+
+        StartPomodoro(TimeSpan.FromMinutes(Math.Clamp(minutes, 1, 240)));
+    }
+
+    private void PomodoroStopMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        StopPomodoro();
     }
 
     private async Task SwitchAudioOutputAsync()

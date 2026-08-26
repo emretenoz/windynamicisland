@@ -111,6 +111,10 @@
                     Click="PomodoroFiveMenuItem_Click" />
           <MenuItem Header="Pomodoro 25 min"
                     Click="PomodoroTwentyFiveMenuItem_Click" />
+          <MenuItem Header="Custom Pomodoro..."
+                    Click="PomodoroCustomMenuItem_Click" />
+          <MenuItem Header="Stop Pomodoro"
+                    Click="PomodoroStopMenuItem_Click" />
           <Separator />
           <MenuItem Header="Exit"
                     Click="ExitMenuItem_Click" />
@@ -325,6 +329,40 @@
             </StackPanel>
           </Grid>
         </Grid>
+      </Grid>
+    </Border>
+
+    <Border x:Name="PomodoroBubble"
+            Width="78"
+            Height="28"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Top"
+            Margin="374,10,0,0"
+            CornerRadius="14"
+            Background="#EE000000"
+            BorderBrush="#28FFFFFF"
+            BorderThickness="1"
+            Opacity="0"
+            Visibility="Collapsed"
+            ClipToBounds="True">
+      <Grid Margin="9,0">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <Ellipse Width="6"
+                 Height="6"
+                 Fill="#FFD23F"
+                 VerticalAlignment="Center"
+                 Margin="0,0,7,0" />
+        <TextBlock x:Name="PomodoroBubbleText"
+                   Grid.Column="1"
+                   Text="25:00"
+                   Foreground="White"
+                   FontSize="11"
+                   FontWeight="SemiBold"
+                   VerticalAlignment="Center"
+                   TextAlignment="Center" />
       </Grid>
     </Border>
   </Grid>
