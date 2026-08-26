@@ -1261,11 +1261,15 @@ public partial class MainWindow : Window
     {
         if (_isMediaActive)
         {
+            Grid.SetColumn(CompactTimerText, 1);
+            Grid.SetColumnSpan(CompactTimerText, 1);
             CompactTimerText.HorizontalAlignment = HorizontalAlignment.Right;
             CompactTimerText.Margin = new Thickness(8, 0, 0, 0);
             return;
         }
 
+        Grid.SetColumn(CompactTimerText, 0);
+        Grid.SetColumnSpan(CompactTimerText, 4);
         CompactTimerText.HorizontalAlignment = HorizontalAlignment.Center;
         CompactTimerText.Margin = new Thickness(0);
     }

@@ -39,6 +39,7 @@ obj/
 .timer-compact-build/
 .timer-compact-tune-build/
 .timer-center-build/
+.timer-true-center-build/
 .vs/
 *.user
 *.suo
