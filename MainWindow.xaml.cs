@@ -1188,11 +1188,20 @@ public partial class MainWindow : Window
 
     private void ShowPomodoroBubble()
     {
+        PositionPomodoroBubble(Island.ActualWidth > 0 ? Island.ActualWidth : Island.Width);
         PomodoroBubble.Visibility = Visibility.Visible;
         PomodoroBubble.BeginAnimation(OpacityProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(180))
         {
             EasingFunction = (QuadraticEase)Resources["IslandEase"]
         });
+    }
+
+    private void PositionPomodoroBubble(double islandWidth)
+    {
+        var gap = 6d;
+        var islandCenterOffset = islandWidth / 2;
+        var bubbleCenterOffset = PomodoroBubble.Width / 2;
+        PomodoroBubble.Margin = new Thickness(islandCenterOffset + bubbleCenterOffset + gap, 10, 0, 0);
     }
 
     private void HidePomodoroBubble()
@@ -1257,6 +1266,7 @@ public partial class MainWindow : Window
         };
 
         AnimateIsland(width, height, GetCornerRadius(nextState, height));
+        PositionPomodoroBubble(width);
         SetView(MediaCompactView, nextState is IslandState.MediaCompact);
         SetView(MediaExpandedView, nextState is IslandState.MediaExpanded);
         SetView(NotificationView, nextState is IslandState.Notification);

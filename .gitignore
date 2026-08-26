@@ -27,6 +27,7 @@ obj/
 .notification-logo-size-build/
 .feature-pack-build/
 .pomodoro-bubble-build/
+.pomodoro-chip-build/
 .vs/
 *.user
 *.suo
