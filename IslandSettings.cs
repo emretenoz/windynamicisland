@@ -15,6 +15,8 @@ public sealed class IslandSettings
     public bool WeatherEnabled { get; set; } = true;
     public bool ScreenshotPreviewEnabled { get; set; } = true;
     public bool TimerEnabled { get; set; } = true;
+    public bool SystemAlertsEnabled { get; set; } = true;
+    public int DisplayIndex { get; set; }
 
     public static IslandSettings Load()
     {

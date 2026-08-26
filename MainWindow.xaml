@@ -16,7 +16,7 @@
         MouseLeave="Window_MouseLeave"
         MouseWheel="Window_MouseWheel">
   <Window.Resources>
-    <QuadraticEase x:Key="IslandEase" EasingMode="EaseInOut" />
+    <CubicEase x:Key="IslandEase" EasingMode="EaseOut" />
     <Style TargetType="ContextMenu">
       <Setter Property="OverridesDefaultStyle" Value="True" />
       <Setter Property="SnapsToDevicePixels" Value="True" />
@@ -168,7 +168,7 @@
             VerticalAlignment="Top"
             Margin="0,8,0,0"
             CornerRadius="18"
-            Background="#EE000000"
+            Background="#D9000000"
             Cursor="Hand"
             ClipToBounds="True"
             Opacity="1"

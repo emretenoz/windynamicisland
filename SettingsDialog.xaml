@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Settings"
         Width="340"
-        Height="292"
+        Height="360"
         WindowStyle="None"
         ResizeMode="NoResize"
         AllowsTransparency="True"
@@ -121,6 +121,18 @@
                   Content="Screenshot preview" />
         <CheckBox x:Name="TimerCheckBox"
                   Content="Timer controls" />
+        <CheckBox x:Name="SystemAlertsCheckBox"
+                  Content="System alerts" />
+        <TextBlock Text="Display"
+                   Foreground="#9FFFFFFF"
+                   FontSize="11"
+                   FontWeight="SemiBold"
+                   Margin="0,14,0,6" />
+        <ComboBox x:Name="DisplayComboBox"
+                  Height="34"
+                  Foreground="White"
+                  Background="#18FFFFFF"
+                  BorderThickness="0" />
       </StackPanel>
 
       <StackPanel Grid.Row="2"

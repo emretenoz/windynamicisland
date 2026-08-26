@@ -17,6 +17,11 @@ using Windows.Media.Control;
 using Windows.Storage.Streams;
 using Windows.UI.Notifications;
 using Windows.UI.Notifications.Management;
+using Forms = System.Windows.Forms;
+using WpfButton = System.Windows.Controls.Button;
+using WpfClipboard = System.Windows.Clipboard;
+using WpfColor = System.Windows.Media.Color;
+using WpfHorizontalAlignment = System.Windows.HorizontalAlignment;
 
 namespace WinDynamicIsland;
 
@@ -29,6 +34,7 @@ public partial class MainWindow : Window
     private const int WsExToolWindow = 0x00000080;
     private const int WmNchittest = 0x0084;
     private const int WmClipboardUpdate = 0x031D;
+    private const int WmDisplayChange = 0x007E;
     private const int Httransparent = -1;
     private const int SwShowMinimized = 2;
     private const uint MonitorDefaultToNearest = 0x00000002;
@@ -49,6 +55,7 @@ public partial class MainWindow : Window
     private DispatcherTimer? _notificationWatcher;
     private DispatcherTimer? _timerTimer;
     private DispatcherTimer? _weatherWatcher;
+    private DispatcherTimer? _systemStatusWatcher;
     private readonly HashSet<uint> _seenNotificationIds = new();
     private readonly List<string> _clipboardHistory = new();
     private IslandState _state = IslandState.MediaCompact;
@@ -61,6 +68,11 @@ public partial class MainWindow : Window
     private bool _isHovering;
     private bool _isHiddenForFullscreen;
     private bool _showedNotificationReadError;
+    private bool _systemStatusPrimed;
+    private bool _lastCapsLockOn;
+    private bool _lastNumLockOn;
+    private Forms.PowerLineStatus _lastPowerLineStatus;
+    private int _lastBatteryPercent = -1;
     private double _screenshotPreviewWidth = 510;
     private double _screenshotPreviewHeight = 190;
 
@@ -75,12 +87,17 @@ public partial class MainWindow : Window
     {
         PositionAtTopCenter();
         HideFromAltTab();
+        TryEnableAcrylicBackdrop();
         AddTransparentHitTestSupport();
         AddClipboardListener();
         RefreshStartupMenuState();
         InitializeAudio();
         StartFullscreenWatcher();
         StartPrivacyWatcher();
+        if (_settings.SystemAlertsEnabled)
+        {
+            StartSystemStatusWatcher();
+        }
         if (_settings.WeatherEnabled)
         {
             StartWeatherWatcher();
@@ -116,12 +133,19 @@ public partial class MainWindow : Window
         _notificationWatcher?.Stop();
         _timerTimer?.Stop();
         _weatherWatcher?.Stop();
+        _systemStatusWatcher?.Stop();
     }
 
     private void PositionAtTopCenter()
     {
-        Left = (SystemParameters.PrimaryScreenWidth - Width) / 2;
-        Top = 0;
+        var screens = Forms.Screen.AllScreens;
+        var screen = screens.Length == 0
+            ? Forms.Screen.PrimaryScreen
+            : screens[Math.Clamp(_settings.DisplayIndex, 0, screens.Length - 1)];
+
+        var bounds = screen?.WorkingArea ?? Forms.Screen.PrimaryScreen?.WorkingArea ?? Forms.SystemInformation.VirtualScreen;
+        Left = bounds.Left + (bounds.Width - Width) / 2.0;
+        Top = bounds.Top;
     }
 
     private void HideFromAltTab()
@@ -129,6 +153,44 @@ public partial class MainWindow : Window
         var helper = new WindowInteropHelper(this);
         var style = GetWindowLong(helper.Handle, GwlExStyle);
         SetWindowLong(helper.Handle, GwlExStyle, style | WsExToolWindow);
+    }
+
+    private void TryEnableAcrylicBackdrop()
+    {
+        try
+        {
+            var helper = new WindowInteropHelper(this);
+            if (helper.Handle == IntPtr.Zero)
+            {
+                return;
+            }
+
+            var accent = new AccentPolicy
+            {
+                AccentState = AccentState.AccentEnableAcrylicBlurBehind,
+                GradientColor = unchecked((int)0xD9000000)
+            };
+            var accentSize = Marshal.SizeOf<AccentPolicy>();
+            var accentPtr = Marshal.AllocHGlobal(accentSize);
+            try
+            {
+                Marshal.StructureToPtr(accent, accentPtr, false);
+                var data = new WindowCompositionAttributeData
+                {
+                    Attribute = WindowCompositionAttribute.WcaAccentPolicy,
+                    SizeOfData = accentSize,
+                    Data = accentPtr
+                };
+                SetWindowCompositionAttribute(helper.Handle, ref data);
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(accentPtr);
+            }
+        }
+        catch
+        {
+        }
     }
 
     private void AddTransparentHitTestSupport()
@@ -193,6 +255,73 @@ public partial class MainWindow : Window
         _weatherWatcher.Start();
         _ = Task.Delay(TimeSpan.FromSeconds(8)).ContinueWith(_ =>
             Dispatcher.Invoke(async () => await ShowIdleWeatherAsync()));
+    }
+
+    private void StartSystemStatusWatcher()
+    {
+        _systemStatusWatcher?.Stop();
+        _systemStatusWatcher = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(800)
+        };
+        _systemStatusWatcher.Tick += (_, _) => UpdateSystemStatusAlerts();
+        _systemStatusWatcher.Start();
+        UpdateSystemStatusAlerts();
+    }
+
+    private void UpdateSystemStatusAlerts()
+    {
+        if (!_settings.SystemAlertsEnabled)
+        {
+            return;
+        }
+
+        var capsOn = IsToggleKeyOn(0x14);
+        var numOn = IsToggleKeyOn(0x90);
+        var power = Forms.SystemInformation.PowerStatus;
+        var percent = power.BatteryLifePercent >= 0
+            ? (int)Math.Round(power.BatteryLifePercent * 100)
+            : -1;
+
+        if (!_systemStatusPrimed)
+        {
+            _lastCapsLockOn = capsOn;
+            _lastNumLockOn = numOn;
+            _lastPowerLineStatus = power.PowerLineStatus;
+            _lastBatteryPercent = percent;
+            _systemStatusPrimed = true;
+            return;
+        }
+
+        if (capsOn != _lastCapsLockOn)
+        {
+            _lastCapsLockOn = capsOn;
+            ShowUtility("Caps Lock", capsOn ? "Acik" : "Kapali", "A", capsOn ? 1 : 0, TimeSpan.FromSeconds(1.4));
+        }
+        else if (numOn != _lastNumLockOn)
+        {
+            _lastNumLockOn = numOn;
+            ShowUtility("Num Lock", numOn ? "Acik" : "Kapali", "#", numOn ? 1 : 0, TimeSpan.FromSeconds(1.4));
+        }
+        else if (power.PowerLineStatus != _lastPowerLineStatus)
+        {
+            _lastPowerLineStatus = power.PowerLineStatus;
+            ShowUtility("Pil", power.PowerLineStatus is Forms.PowerLineStatus.Online ? $"Sarj oluyor {percent}%" : $"Pilde {percent}%", "B", percent / 100d, TimeSpan.FromSeconds(2.2));
+        }
+        else if (percent >= 0 &&
+                 percent <= 20 &&
+                 percent != _lastBatteryPercent &&
+                 power.PowerLineStatus is not Forms.PowerLineStatus.Online)
+        {
+            ShowUtility("Pil Dusuk", $"{percent}% kaldi", "B", percent / 100d, TimeSpan.FromSeconds(2.2));
+        }
+
+        _lastBatteryPercent = percent;
+    }
+
+    private static bool IsToggleKeyOn(int virtualKey)
+    {
+        return (GetKeyState(virtualKey) & 0x0001) != 0;
     }
 
     private void UpdatePrivacyIndicators()
@@ -289,8 +418,8 @@ public partial class MainWindow : Window
 
     private void AnimateFullscreenVisibility(bool hide)
     {
-        var ease = (QuadraticEase)Resources["IslandEase"];
-        var duration = TimeSpan.FromMilliseconds(hide ? 180 : 240);
+        var ease = (IEasingFunction)Resources["IslandEase"];
+        var duration = TimeSpan.FromMilliseconds(hide ? 190 : 280);
 
         if (!hide)
         {
@@ -372,6 +501,12 @@ public partial class MainWindow : Window
             return IntPtr.Zero;
         }
 
+        if (msg == WmDisplayChange)
+        {
+            PositionAtTopCenter();
+            return IntPtr.Zero;
+        }
+
         if (msg != WmNchittest)
         {
             return IntPtr.Zero;
@@ -389,21 +524,21 @@ public partial class MainWindow : Window
         return new IntPtr(Httransparent);
     }
 
-    private static Point GetPointFromLParam(IntPtr lParam)
+    private static System.Windows.Point GetPointFromLParam(IntPtr lParam)
     {
         var value = lParam.ToInt64();
         var x = unchecked((short)(value & 0xFFFF));
         var y = unchecked((short)((value >> 16) & 0xFFFF));
-        return new Point(x, y);
+        return new System.Windows.Point(x, y);
     }
 
     private void HandleClipboardUpdate()
     {
         try
         {
-            if (Clipboard.ContainsText())
+            if (WpfClipboard.ContainsText())
             {
-                var text = Clipboard.GetText().Trim();
+                var text = WpfClipboard.GetText().Trim();
                 if (string.IsNullOrWhiteSpace(text))
                 {
                     return;
@@ -420,14 +555,14 @@ public partial class MainWindow : Window
                 return;
             }
 
-            if (Clipboard.ContainsImage())
+            if (WpfClipboard.ContainsImage())
             {
                 if (!_settings.ScreenshotPreviewEnabled)
                 {
                     return;
                 }
 
-                var image = Clipboard.GetImage();
+                var image = WpfClipboard.GetImage();
                 _clipboardHistory.Insert(0, "[Gorsel]");
                 if (_clipboardHistory.Count > 5)
                 {
@@ -1093,8 +1228,8 @@ public partial class MainWindow : Window
     {
         if (bitmap is null)
         {
-            IslandStroke.BorderBrush = new SolidColorBrush(Color.FromArgb(18, 255, 255, 255));
-            CompactBarThree.Background = new SolidColorBrush(Color.FromRgb(29, 185, 84));
+            IslandStroke.BorderBrush = new SolidColorBrush(WpfColor.FromArgb(18, 255, 255, 255));
+            CompactBarThree.Background = new SolidColorBrush(WpfColor.FromRgb(29, 185, 84));
             return;
         }
 
@@ -1131,9 +1266,9 @@ public partial class MainWindow : Window
                 return;
             }
 
-            var color = Color.FromRgb((byte)(red / count), (byte)(green / count), (byte)(blue / count));
-            IslandStroke.BorderBrush = new SolidColorBrush(Color.FromArgb(80, color.R, color.G, color.B));
-            CompactBarThree.Background = new SolidColorBrush(Color.FromArgb(255, color.R, color.G, color.B));
+            var color = WpfColor.FromRgb((byte)(red / count), (byte)(green / count), (byte)(blue / count));
+            IslandStroke.BorderBrush = new SolidColorBrush(WpfColor.FromArgb(80, color.R, color.G, color.B));
+            CompactBarThree.Background = new SolidColorBrush(WpfColor.FromArgb(255, color.R, color.G, color.B));
         }
         catch
         {
@@ -1287,14 +1422,14 @@ public partial class MainWindow : Window
         {
             Grid.SetColumn(CompactTimerText, 1);
             Grid.SetColumnSpan(CompactTimerText, 1);
-            CompactTimerText.HorizontalAlignment = HorizontalAlignment.Right;
+            CompactTimerText.HorizontalAlignment = WpfHorizontalAlignment.Right;
             CompactTimerText.Margin = new Thickness(8, 0, 0, 0);
             return;
         }
 
         Grid.SetColumn(CompactTimerText, 0);
         Grid.SetColumnSpan(CompactTimerText, 4);
-        CompactTimerText.HorizontalAlignment = HorizontalAlignment.Center;
+        CompactTimerText.HorizontalAlignment = WpfHorizontalAlignment.Center;
         CompactTimerText.Margin = new Thickness(0);
     }
 
@@ -1321,7 +1456,7 @@ public partial class MainWindow : Window
 
     private void Island_MouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
-        if (FindVisualParent<Button>(e.OriginalSource as DependencyObject) is not null)
+        if (FindVisualParent<WpfButton>(e.OriginalSource as DependencyObject) is not null)
         {
             return;
         }
@@ -1467,6 +1602,23 @@ public partial class MainWindow : Window
         {
             StopTimer();
         }
+
+        if (_settings.SystemAlertsEnabled)
+        {
+            if (_systemStatusWatcher is null)
+            {
+                _systemStatusPrimed = false;
+                StartSystemStatusWatcher();
+            }
+        }
+        else
+        {
+            _systemStatusWatcher?.Stop();
+            _systemStatusWatcher = null;
+            _systemStatusPrimed = false;
+        }
+
+        PositionAtTopCenter();
     }
 
     private async void SwitchAudioOutputMenuItem_Click(object sender, RoutedEventArgs e)
@@ -1594,14 +1746,14 @@ public partial class MainWindow : Window
 
     private void AnimateIsland(double width, double height, double radius)
     {
-        var ease = (QuadraticEase)Resources["IslandEase"];
-        Island.BeginAnimation(WidthProperty, new DoubleAnimation(width, TimeSpan.FromMilliseconds(230)) { EasingFunction = ease });
-        Island.BeginAnimation(HeightProperty, new DoubleAnimation(height, TimeSpan.FromMilliseconds(230)) { EasingFunction = ease });
+        var ease = (IEasingFunction)Resources["IslandEase"];
+        Island.BeginAnimation(WidthProperty, new DoubleAnimation(width, TimeSpan.FromMilliseconds(260)) { EasingFunction = ease });
+        Island.BeginAnimation(HeightProperty, new DoubleAnimation(height, TimeSpan.FromMilliseconds(260)) { EasingFunction = ease });
 
         var cornerAnimation = new CornerRadiusAnimation
         {
             To = new CornerRadius(radius),
-            Duration = TimeSpan.FromMilliseconds(230),
+            Duration = TimeSpan.FromMilliseconds(260),
             EasingFunction = ease
         };
         Island.BeginAnimation(Border.CornerRadiusProperty, cornerAnimation);
@@ -1633,6 +1785,12 @@ public partial class MainWindow : Window
     private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
 
     [DllImport("user32.dll")]
+    private static extern short GetKeyState(int nVirtKey);
+
+    [DllImport("user32.dll")]
+    private static extern int SetWindowCompositionAttribute(IntPtr hwnd, ref WindowCompositionAttributeData data);
+
+    [DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();
 
     [DllImport("user32.dll")]
@@ -1658,6 +1816,37 @@ public partial class MainWindow : Window
 
     [DllImport("user32.dll", CharSet = CharSet.Auto)]
     private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MonitorInfo lpmi);
+}
+
+public enum AccentState
+{
+    AccentDisabled = 0,
+    AccentEnableGradient = 1,
+    AccentEnableTransparentGradient = 2,
+    AccentEnableBlurBehind = 3,
+    AccentEnableAcrylicBlurBehind = 4
+}
+
+public enum WindowCompositionAttribute
+{
+    WcaAccentPolicy = 19
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public struct AccentPolicy
+{
+    public AccentState AccentState;
+    public int AccentFlags;
+    public int GradientColor;
+    public int AnimationId;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public struct WindowCompositionAttributeData
+{
+    public WindowCompositionAttribute Attribute;
+    public IntPtr Data;
+    public int SizeOfData;
 }
 
 public enum IslandState
