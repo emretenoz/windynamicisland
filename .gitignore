@@ -30,6 +30,7 @@ obj/
 .pomodoro-chip-build/
 .pomodoro-clean-build/
 .pomodoro-hover-build/
+.screenshot-preview-build/
 .vs/
 *.user
 *.suo

@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="WinDynamicIsland"
         Width="560"
-        Height="145"
+        Height="230"
         Topmost="True"
         AllowsTransparency="True"
         WindowStyle="None"
@@ -368,6 +368,33 @@
                         Background="#FFFFFFFF" />
               </Border>
             </StackPanel>
+          </Grid>
+
+          <Grid x:Name="ScreenshotPreviewView" Margin="12,10" Opacity="0" Visibility="Collapsed">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="24" />
+              <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <Grid>
+              <TextBlock Text="Screenshot"
+                         Foreground="White"
+                         FontSize="12"
+                         FontWeight="SemiBold"
+                         VerticalAlignment="Center" />
+              <TextBlock Text="panoya kopyalandi"
+                         Foreground="#8FFFFFFF"
+                         FontSize="10.5"
+                         HorizontalAlignment="Right"
+                         VerticalAlignment="Center" />
+            </Grid>
+            <Border Grid.Row="1"
+                    Margin="0,6,0,0"
+                    CornerRadius="16"
+                    Background="#141414"
+                    ClipToBounds="True">
+              <Image x:Name="ScreenshotPreviewImage"
+                     Stretch="UniformToFill" />
+            </Border>
           </Grid>
         </Grid>
       </Grid>

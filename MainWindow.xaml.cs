@@ -414,13 +414,14 @@ public partial class MainWindow : Window
 
             if (Clipboard.ContainsImage())
             {
+                var image = Clipboard.GetImage();
                 _clipboardHistory.Insert(0, "[Gorsel]");
                 if (_clipboardHistory.Count > 5)
                 {
                     _clipboardHistory.RemoveAt(_clipboardHistory.Count - 1);
                 }
 
-                ShowUtility("Screenshot", "SS panoya kopyalandi", "S", 1, TimeSpan.FromSeconds(2.4));
+                ShowScreenshotPreview(image);
             }
         }
         catch
@@ -668,12 +669,29 @@ public partial class MainWindow : Window
         _ = CollapseUtilityLaterAsync(duration ?? TimeSpan.FromSeconds(3), _utilityCollapseCts.Token);
     }
 
+    private void ShowScreenshotPreview(BitmapSource? image)
+    {
+        if (image is null)
+        {
+            ShowUtility("Screenshot", "SS panoya kopyalandi", "S", 1, TimeSpan.FromSeconds(2.4));
+            return;
+        }
+
+        ScreenshotPreviewImage.Source = image;
+        TransitionTo(IslandState.ScreenshotPreview);
+
+        _utilityCollapseCts?.Cancel();
+        _utilityCollapseCts?.Dispose();
+        _utilityCollapseCts = new CancellationTokenSource();
+        _ = CollapseUtilityLaterAsync(TimeSpan.FromSeconds(3.2), _utilityCollapseCts.Token);
+    }
+
     private async Task CollapseUtilityLaterAsync(TimeSpan delay, CancellationToken cancellationToken)
     {
         try
         {
             await Task.Delay(delay, cancellationToken);
-            if (!cancellationToken.IsCancellationRequested && _state is IslandState.Utility)
+            if (!cancellationToken.IsCancellationRequested && _state is IslandState.Utility or IslandState.ScreenshotPreview)
             {
                 TransitionTo(_isHovering && _hasMediaSession ? IslandState.MediaExpanded : IslandState.MediaCompact);
             }
@@ -1269,6 +1287,7 @@ public partial class MainWindow : Window
             IslandState.MediaExpanded => (510d, IsPomodoroActive ? 140d : 108d),
             IslandState.Notification => (330d, 56d),
             IslandState.Utility => (330d, 56d),
+            IslandState.ScreenshotPreview => (510d, 190d),
             _ => (190d, 36d)
         };
 
@@ -1278,6 +1297,7 @@ public partial class MainWindow : Window
         SetView(MediaExpandedView, nextState is IslandState.MediaExpanded);
         SetView(NotificationView, nextState is IslandState.Notification);
         SetView(UtilityView, nextState is IslandState.Utility);
+        SetView(ScreenshotPreviewView, nextState is IslandState.ScreenshotPreview);
 
     }
 
@@ -1301,6 +1321,7 @@ public partial class MainWindow : Window
             IslandState.MediaExpanded => 26d,
             IslandState.Notification => 16d,
             IslandState.Utility => 16d,
+            IslandState.ScreenshotPreview => 24d,
             _ => height / 2
         };
     }
@@ -1490,7 +1511,8 @@ public enum IslandState
     MediaCompact,
     MediaExpanded,
     Notification,
-    Utility
+    Utility,
+    ScreenshotPreview
 }
 
 public sealed record NotificationPreview(string AppName, string Message, ImageSource? Logo);
