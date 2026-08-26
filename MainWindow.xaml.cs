@@ -1220,8 +1220,8 @@ public partial class MainWindow : Window
         };
         _timerTimer.Tick += (_, _) => UpdateTimer();
         _timerTimer.Start();
-        ShowUtility("Timer", $"{Math.Round(duration.TotalMinutes)} dakika basladi", "T", 1, TimeSpan.FromSeconds(1.2));
         UpdateTimer();
+        TransitionTo(IslandState.MediaCompact);
     }
 
     private void UpdateTimer()
@@ -1238,6 +1238,7 @@ public partial class MainWindow : Window
             _timerStartedAt = null;
             _timerEndsAt = null;
             TimerPanel.Visibility = Visibility.Collapsed;
+            CompactTimerText.Visibility = Visibility.Collapsed;
             ShowNotification("Timer", "Sure bitti");
             if (_state is IslandState.MediaExpanded && !_hasMediaSession)
             {
@@ -1248,6 +1249,8 @@ public partial class MainWindow : Window
 
         var totalSeconds = Math.Max(1, (_timerEndsAt.Value - (_timerStartedAt ?? DateTimeOffset.Now)).TotalSeconds);
         var progress = Math.Clamp(1 - remaining.TotalSeconds / totalSeconds, 0, 1);
+        CompactTimerText.Text = FormatRemaining(remaining);
+        CompactTimerText.Visibility = Visibility.Visible;
         TimerPanel.Visibility = Visibility.Visible;
         TimerTimeText.Text = FormatRemaining(remaining);
         TimerProgressFill.Width = progress * 374;
@@ -1269,7 +1272,9 @@ public partial class MainWindow : Window
         _timerStartedAt = null;
         _timerEndsAt = null;
         TimerPanel.Visibility = Visibility.Collapsed;
+        CompactTimerText.Visibility = Visibility.Collapsed;
         ShowUtility("Timer", "Durduruldu", "T", 0, TimeSpan.FromSeconds(1.3));
+        TransitionTo(IslandState.MediaCompact);
     }
 
     private void Island_MouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
@@ -1330,13 +1335,23 @@ public partial class MainWindow : Window
     {
         if (_isMediaActive)
         {
+            if (IsTimerActive)
+            {
+                return _isCameraActive || _isMicrophoneActive ? 202d : 176d;
+            }
+
             return _isCameraActive || _isMicrophoneActive ? 146d : 124d;
+        }
+
+        if (IsTimerActive)
+        {
+            return _isCameraActive || _isMicrophoneActive ? 120d : 94d;
         }
 
         return _isCameraActive || _isMicrophoneActive ? 52d : 44d;
     }
 
-    private double GetCompactHeight() => _isMediaActive ? 30d : 22d;
+    private double GetCompactHeight() => _isMediaActive || IsTimerActive ? 30d : 22d;
 
     private double GetCornerRadius(IslandState state, double height)
     {

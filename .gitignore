@@ -36,6 +36,7 @@ obj/
 .timer-rename-build/
 .timer-presets-build/
 .modern-timer-dialog-build/
+.timer-compact-build/
 .vs/
 *.user
 *.suo
