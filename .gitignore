@@ -31,6 +31,7 @@ obj/
 .pomodoro-clean-build/
 .pomodoro-hover-build/
 .screenshot-preview-build/
+.screenshot-aspect-build/
 .vs/
 *.user
 *.suo

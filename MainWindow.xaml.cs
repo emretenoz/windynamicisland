@@ -61,6 +61,8 @@ public partial class MainWindow : Window
     private bool _isHovering;
     private bool _isHiddenForFullscreen;
     private bool _showedNotificationReadError;
+    private double _screenshotPreviewWidth = 510;
+    private double _screenshotPreviewHeight = 190;
 
     private bool IsPomodoroActive => _pomodoroEndsAt is not null;
 
@@ -678,12 +680,36 @@ public partial class MainWindow : Window
         }
 
         ScreenshotPreviewImage.Source = image;
+        SetScreenshotPreviewSize(image);
         TransitionTo(IslandState.ScreenshotPreview);
 
         _utilityCollapseCts?.Cancel();
         _utilityCollapseCts?.Dispose();
         _utilityCollapseCts = new CancellationTokenSource();
         _ = CollapseUtilityLaterAsync(TimeSpan.FromSeconds(3.2), _utilityCollapseCts.Token);
+    }
+
+    private void SetScreenshotPreviewSize(BitmapSource image)
+    {
+        var aspect = image.PixelHeight > 0 ? (double)image.PixelWidth / image.PixelHeight : 1.6;
+        if (aspect < 0.8)
+        {
+            var imageHeight = 340d;
+            _screenshotPreviewWidth = Math.Clamp(imageHeight * aspect + 24, 220, 330);
+            _screenshotPreviewHeight = 390;
+            return;
+        }
+
+        if (aspect > 1.35)
+        {
+            var imageWidth = 486d;
+            _screenshotPreviewWidth = 510;
+            _screenshotPreviewHeight = Math.Clamp(imageWidth / aspect + 50, 170, 270);
+            return;
+        }
+
+        _screenshotPreviewWidth = 380;
+        _screenshotPreviewHeight = 380;
     }
 
     private async Task CollapseUtilityLaterAsync(TimeSpan delay, CancellationToken cancellationToken)
@@ -1287,7 +1313,7 @@ public partial class MainWindow : Window
             IslandState.MediaExpanded => (510d, IsPomodoroActive ? 140d : 108d),
             IslandState.Notification => (330d, 56d),
             IslandState.Utility => (330d, 56d),
-            IslandState.ScreenshotPreview => (510d, 190d),
+            IslandState.ScreenshotPreview => (_screenshotPreviewWidth, _screenshotPreviewHeight),
             _ => (190d, 36d)
         };
 
