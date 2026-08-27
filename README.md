@@ -20,7 +20,7 @@ A lightweight Windows Dynamic Island-style WPF widget for media, notifications, 
 - macOS-style dock with running/minimized apps, pinning, drag-to-reorder, and app actions.
 - Searchable launcher that discovers installed desktop, Store, Riot, and Steam apps.
 - Per-app launcher hiding for keeping the application list clean.
-- Independent left/center/right placement, X/Y offsets, and direct drag positioning for the island and dock.
+- Independent left/center/right placement and X/Y offsets, with an optional drag-position editing mode.
 
 ## Requirements
 

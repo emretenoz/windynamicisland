@@ -136,6 +136,8 @@
                     Content="Sayaç kontrolleri" />
           <CheckBox x:Name="SystemAlertsCheckBox"
                     Content="Sistem uyarıları" />
+          <CheckBox x:Name="PositionEditingCheckBox"
+                    Content="Konum düzenleme modu (sürükle-bırak)" />
           <TextBlock Text="Monitör"
                      Foreground="#9FFFFFFF"
                      FontSize="11"

@@ -16,6 +16,7 @@ public sealed class IslandSettings
     public bool ScreenshotPreviewEnabled { get; set; } = true;
     public bool TimerEnabled { get; set; } = true;
     public bool SystemAlertsEnabled { get; set; } = true;
+    public bool PositionEditingEnabled { get; set; }
     public int DisplayIndex { get; set; }
     public int IslandHorizontalPosition { get; set; } = 1;
     public double IslandOffsetX { get; set; }

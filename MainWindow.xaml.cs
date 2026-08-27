@@ -3406,7 +3406,8 @@ public partial class MainWindow : Window
 
     private void Island_PreviewMouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
-        if (e.LeftButton is not System.Windows.Input.MouseButtonState.Pressed ||
+        if (!_settings.PositionEditingEnabled ||
+            e.LeftButton is not System.Windows.Input.MouseButtonState.Pressed ||
             FindVisualParent<WpfButton>(e.OriginalSource as DependencyObject) is not null)
         {
             return;
@@ -3453,7 +3454,9 @@ public partial class MainWindow : Window
         }
 
         Island.ReleaseMouseCapture();
-        Island.Cursor = System.Windows.Input.Cursors.Hand;
+        Island.Cursor = _settings.PositionEditingEnabled
+            ? System.Windows.Input.Cursors.SizeAll
+            : System.Windows.Input.Cursors.Hand;
         _islandPositionDragStart = null;
         if (_isDraggingIslandPosition)
         {
@@ -3466,6 +3469,11 @@ public partial class MainWindow : Window
 
     private void DockDragHandle_PreviewMouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
+        if (!_settings.PositionEditingEnabled)
+        {
+            return;
+        }
+
         _dockPositionDragStart = e.GetPosition(this);
         _dockDragStartX = _settings.DockOffsetX;
         _dockDragStartY = _settings.DockOffsetY;
@@ -3725,6 +3733,16 @@ public partial class MainWindow : Window
 
     private void ApplyElementPositions()
     {
+        DockDragHandle.Visibility = _settings.PositionEditingEnabled
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        Island.ToolTip = _settings.PositionEditingEnabled
+            ? "Konum düzenleme açık — sürükleyerek taşı"
+            : "Pano geçmişini aç";
+        Island.Cursor = _settings.PositionEditingEnabled
+            ? System.Windows.Input.Cursors.SizeAll
+            : System.Windows.Input.Cursors.Hand;
+
         var islandAlignment = GetHorizontalAlignment(_settings.IslandHorizontalPosition);
         IslandHoverZone.HorizontalAlignment = islandAlignment;
         IslandHoverZone.Margin = GetAnchoredMargin(islandAlignment, 12, 0);

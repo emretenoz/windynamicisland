@@ -18,6 +18,7 @@ public partial class SettingsDialog : Window
             ScreenshotPreviewEnabled = settings.ScreenshotPreviewEnabled,
             TimerEnabled = settings.TimerEnabled,
             SystemAlertsEnabled = settings.SystemAlertsEnabled,
+            PositionEditingEnabled = settings.PositionEditingEnabled,
             DisplayIndex = settings.DisplayIndex,
             IslandHorizontalPosition = settings.IslandHorizontalPosition,
             IslandOffsetX = settings.IslandOffsetX,
@@ -40,6 +41,7 @@ public partial class SettingsDialog : Window
         ScreenshotPreviewCheckBox.IsChecked = Settings.ScreenshotPreviewEnabled;
         TimerCheckBox.IsChecked = Settings.TimerEnabled;
         SystemAlertsCheckBox.IsChecked = Settings.SystemAlertsEnabled;
+        PositionEditingCheckBox.IsChecked = Settings.PositionEditingEnabled;
         IslandPositionComboBox.SelectedIndex = Math.Clamp(Settings.IslandHorizontalPosition, 0, 2);
         IslandOffsetXTextBox.Text = Settings.IslandOffsetX.ToString("0");
         IslandOffsetYTextBox.Text = Settings.IslandOffsetY.ToString("0");
@@ -89,6 +91,7 @@ public partial class SettingsDialog : Window
         Settings.ScreenshotPreviewEnabled = ScreenshotPreviewCheckBox.IsChecked == true;
         Settings.TimerEnabled = TimerCheckBox.IsChecked == true;
         Settings.SystemAlertsEnabled = SystemAlertsCheckBox.IsChecked == true;
+        Settings.PositionEditingEnabled = PositionEditingCheckBox.IsChecked == true;
         Settings.DisplayIndex = Math.Max(0, DisplayComboBox.SelectedIndex);
         Settings.IslandHorizontalPosition = Math.Max(0, IslandPositionComboBox.SelectedIndex);
         Settings.IslandOffsetX = ParsePositionValue(IslandOffsetXTextBox.Text, -2000, 2000);

@@ -494,6 +494,7 @@
                 Background="#78FFFFFF"
                 CornerRadius="2"
                 Cursor="SizeAll"
+                Visibility="Collapsed"
                 ToolTip="Dock'u sürükleyerek taşı"
                 PreviewMouseLeftButtonDown="DockDragHandle_PreviewMouseLeftButtonDown"
                 PreviewMouseMove="DockDragHandle_PreviewMouseMove"
