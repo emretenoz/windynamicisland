@@ -447,7 +447,8 @@
       <Border.Effect>
         <DropShadowEffect BlurRadius="18" ShadowDepth="3" Opacity="0.38" Color="Black" />
       </Border.Effect>
-      <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+      <Grid>
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
         <Button x:Name="DockLauncherButton"
                 Style="{StaticResource DockAppButtonStyle}"
                 Width="40"
@@ -483,7 +484,21 @@
                       Orientation="Horizontal"
                       VerticalAlignment="Center" />
         </ScrollViewer>
-      </StackPanel>
+        </StackPanel>
+        <Border x:Name="DockDragHandle"
+                Width="28"
+                Height="4"
+                Margin="0,-3,0,0"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Top"
+                Background="#78FFFFFF"
+                CornerRadius="2"
+                Cursor="SizeAll"
+                ToolTip="Dock'u sürükleyerek taşı"
+                PreviewMouseLeftButtonDown="DockDragHandle_PreviewMouseLeftButtonDown"
+                PreviewMouseMove="DockDragHandle_PreviewMouseMove"
+                PreviewMouseLeftButtonUp="DockDragHandle_PreviewMouseLeftButtonUp" />
+      </Grid>
     </Border>
 
     <Border x:Name="StartMenuPanel"
@@ -753,9 +768,13 @@
               CornerRadius="18"
               Background="#EE000000"
               Cursor="Hand"
+              ToolTip="Tıklayın veya sürükleyerek taşıyın"
               ClipToBounds="True"
               Opacity="1"
               RenderTransformOrigin="0.5,0.5"
+              PreviewMouseLeftButtonDown="Island_PreviewMouseLeftButtonDown"
+              PreviewMouseMove="Island_PreviewMouseMove"
+              PreviewMouseLeftButtonUp="Island_PreviewMouseLeftButtonUp"
               MouseLeftButtonUp="Island_MouseLeftButtonUp">
       <Border.RenderTransform>
         <ScaleTransform x:Name="IslandScale" ScaleX="1" ScaleY="1" />

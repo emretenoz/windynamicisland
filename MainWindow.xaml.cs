@@ -123,6 +123,15 @@ public partial class MainWindow : Window
     private uint _lastActiveDockProcessId;
     private int _nextDockOrder;
     private System.Windows.Point? _dockDragStartPoint;
+    private System.Windows.Point? _islandPositionDragStart;
+    private System.Windows.Point? _dockPositionDragStart;
+    private double _islandDragStartX;
+    private double _islandDragStartY;
+    private double _dockDragStartX;
+    private double _dockDragStartY;
+    private bool _isDraggingIslandPosition;
+    private bool _isDraggingDockPosition;
+    private bool _suppressIslandClick;
     private List<LauncherApp>? _installedLauncherApps;
 
     private bool IsTimerActive => _timerEndsAt is not null;
@@ -135,6 +144,7 @@ public partial class MainWindow : Window
     private async void Window_Loaded(object sender, RoutedEventArgs e)
     {
         PositionAtTopCenter();
+        ApplyElementPositions();
         HideFromAltTab();
         RegisterAppBar();
         AddTransparentHitTestSupport();
@@ -3394,8 +3404,127 @@ public partial class MainWindow : Window
         TransitionTo(IslandState.MediaCompact);
     }
 
+    private void Island_PreviewMouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (e.LeftButton is not System.Windows.Input.MouseButtonState.Pressed ||
+            FindVisualParent<WpfButton>(e.OriginalSource as DependencyObject) is not null)
+        {
+            return;
+        }
+
+        _islandPositionDragStart = e.GetPosition(this);
+        _islandDragStartX = _settings.IslandOffsetX;
+        _islandDragStartY = _settings.IslandOffsetY;
+        _isDraggingIslandPosition = false;
+        Island.CaptureMouse();
+    }
+
+    private void Island_PreviewMouseMove(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        if (_islandPositionDragStart is not { } start ||
+            e.LeftButton is not System.Windows.Input.MouseButtonState.Pressed)
+        {
+            return;
+        }
+
+        var current = e.GetPosition(this);
+        var deltaX = current.X - start.X;
+        var deltaY = current.Y - start.Y;
+        if (!_isDraggingIslandPosition &&
+            Math.Abs(deltaX) < SystemParameters.MinimumHorizontalDragDistance &&
+            Math.Abs(deltaY) < SystemParameters.MinimumVerticalDragDistance)
+        {
+            return;
+        }
+
+        _isDraggingIslandPosition = true;
+        Island.Cursor = System.Windows.Input.Cursors.SizeAll;
+        _settings.IslandOffsetX = Math.Clamp(_islandDragStartX + deltaX, -2000, 2000);
+        _settings.IslandOffsetY = Math.Clamp(_islandDragStartY + deltaY, 0, 1000);
+        ApplyElementPositions();
+        e.Handled = true;
+    }
+
+    private void Island_PreviewMouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (_islandPositionDragStart is null)
+        {
+            return;
+        }
+
+        Island.ReleaseMouseCapture();
+        Island.Cursor = System.Windows.Input.Cursors.Hand;
+        _islandPositionDragStart = null;
+        if (_isDraggingIslandPosition)
+        {
+            _settings.Save();
+            _suppressIslandClick = true;
+        }
+
+        _isDraggingIslandPosition = false;
+    }
+
+    private void DockDragHandle_PreviewMouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        _dockPositionDragStart = e.GetPosition(this);
+        _dockDragStartX = _settings.DockOffsetX;
+        _dockDragStartY = _settings.DockOffsetY;
+        _isDraggingDockPosition = false;
+        DockDragHandle.CaptureMouse();
+        e.Handled = true;
+    }
+
+    private void DockDragHandle_PreviewMouseMove(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        if (_dockPositionDragStart is not { } start ||
+            e.LeftButton is not System.Windows.Input.MouseButtonState.Pressed)
+        {
+            return;
+        }
+
+        var current = e.GetPosition(this);
+        var deltaX = current.X - start.X;
+        var deltaY = current.Y - start.Y;
+        if (!_isDraggingDockPosition &&
+            Math.Abs(deltaX) < SystemParameters.MinimumHorizontalDragDistance &&
+            Math.Abs(deltaY) < SystemParameters.MinimumVerticalDragDistance)
+        {
+            return;
+        }
+
+        _isDraggingDockPosition = true;
+        _settings.DockOffsetX = Math.Clamp(_dockDragStartX + deltaX, -2000, 2000);
+        _settings.DockOffsetY = Math.Clamp(_dockDragStartY - deltaY, 0, 1000);
+        ApplyElementPositions();
+        e.Handled = true;
+    }
+
+    private void DockDragHandle_PreviewMouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (_dockPositionDragStart is null)
+        {
+            return;
+        }
+
+        DockDragHandle.ReleaseMouseCapture();
+        _dockPositionDragStart = null;
+        if (_isDraggingDockPosition)
+        {
+            _settings.Save();
+        }
+
+        _isDraggingDockPosition = false;
+        e.Handled = true;
+    }
+
     private void Island_MouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
+        if (_suppressIslandClick)
+        {
+            _suppressIslandClick = false;
+            return;
+        }
+
         if (FindVisualParent<WpfButton>(e.OriginalSource as DependencyObject) is not null)
         {
             return;
@@ -3590,7 +3719,52 @@ public partial class MainWindow : Window
         }
 
         PositionAtTopCenter();
+        ApplyElementPositions();
         RegisterAppBar();
+    }
+
+    private void ApplyElementPositions()
+    {
+        var islandAlignment = GetHorizontalAlignment(_settings.IslandHorizontalPosition);
+        IslandHoverZone.HorizontalAlignment = islandAlignment;
+        IslandHoverZone.Margin = GetAnchoredMargin(islandAlignment, 12, 0);
+        IslandHoverZone.RenderTransform = new TranslateTransform(
+            Math.Clamp(_settings.IslandOffsetX, -2000, 2000),
+            Math.Clamp(_settings.IslandOffsetY, 0, 1000));
+        IslandBarSpacer.Visibility = islandAlignment is WpfHorizontalAlignment.Center
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+
+        var dockAlignment = GetHorizontalAlignment(_settings.DockHorizontalPosition);
+        var dockBottom = Math.Clamp(_settings.DockOffsetY, 0, 1000);
+        var dockX = Math.Clamp(_settings.DockOffsetX, -2000, 2000);
+        DockBar.HorizontalAlignment = dockAlignment;
+        DockBar.Margin = GetAnchoredMargin(dockAlignment, 12, dockBottom);
+        DockBar.RenderTransform = new TranslateTransform(dockX, 0);
+
+        StartMenuPanel.HorizontalAlignment = dockAlignment;
+        StartMenuPanel.Margin = GetAnchoredMargin(dockAlignment, 12, dockBottom + 70);
+        StartMenuPanel.RenderTransform = new TranslateTransform(dockX, 0);
+    }
+
+    private static WpfHorizontalAlignment GetHorizontalAlignment(int position)
+    {
+        return position switch
+        {
+            0 => WpfHorizontalAlignment.Left,
+            2 => WpfHorizontalAlignment.Right,
+            _ => WpfHorizontalAlignment.Center
+        };
+    }
+
+    private static Thickness GetAnchoredMargin(WpfHorizontalAlignment alignment, double sideMargin, double bottomMargin)
+    {
+        return alignment switch
+        {
+            WpfHorizontalAlignment.Left => new Thickness(sideMargin, 0, 0, bottomMargin),
+            WpfHorizontalAlignment.Right => new Thickness(0, 0, sideMargin, bottomMargin),
+            _ => new Thickness(0, 0, 0, bottomMargin)
+        };
     }
 
     private async void SwitchAudioOutputMenuItem_Click(object sender, RoutedEventArgs e)
