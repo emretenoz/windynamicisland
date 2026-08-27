@@ -1,7 +1,10 @@
+using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
+using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
@@ -36,10 +39,42 @@ public partial class MainWindow : Window
     private const int WmClipboardUpdate = 0x031D;
     private const int WmDisplayChange = 0x007E;
     private const int Httransparent = -1;
+    private const int WmClose = 0x0010;
     private const int SwShowMinimized = 2;
+    private const int SwRestore = 9;
+    private const uint GwOwner = 4;
+    private const int WmGetIcon = 0x007F;
+    private const int IconBig = 1;
+    private const int IconSmall2 = 2;
+    private const int IconSmall = 0;
+    private const int GclpHicon = -14;
+    private const int GclpHiconSmall = -34;
+    private const uint ProcessQueryLimitedInformation = 0x1000;
+    private const uint ShgfiIcon = 0x000000100;
+    private const uint ShgfiLargeIcon = 0x000000000;
     private const uint MonitorDefaultToNearest = 0x00000002;
+    private const uint AbmNew = 0x00000000;
+    private const uint AbmRemove = 0x00000001;
+    private const uint AbmQueryPos = 0x00000002;
+    private const uint AbmSetPos = 0x00000003;
+    private const uint AbeTop = 1;
+    private const int TopBarHeight = 38;
     private const string WeatherCity = "Istanbul";
     private static readonly HttpClient HttpClient = new();
+    private static readonly HashSet<string> ShellLauncherNoiseTitles = new(StringComparer.CurrentCultureIgnoreCase)
+    {
+        "Adım Kaydedicisi", "App Recovery", "Başlarken", "Bileşen Hizmetleri", "Bilgisayar Yönetimi",
+        "Büyüteç", "Canlı açıklamalı alt yazılar", "Çalıştır", "Disk Temizleme", "Dropbox Redeem Launcher",
+        "EA app Güncelleyicisi", "EA Error Reporter", "Ekran Klavyesi", "Ekran Okuyucusu", "Feedback Hub",
+        "Get Help", "Görev Zamanlayıcı", "Hizmetler", "iSCSI Başlatıcısı", "Karakter Eşlem",
+        "Kayıt Defteri Düzenleyicisi", "Kaynak İzleyicisi", "Kurtarma Sürücüsü", "Mixed Reality Portal",
+        "ODBC Veri Kaynakları (32-bit)", "ODBC Veri Kaynakları (64-bit)", "Olay Görüntüleyicisi",
+        "Performans İzleyicisi", "Power Automate Troubleshooter", "Ses erişimi", "Sistem Bilgisi",
+        "Sistem Yapılandırması", "Sürücüleri Birleştir ve İyileştir", "Tıklayarak Yap", "Windows Araçları",
+        "Windows Bellek Tanılama", "Windows Faks ve Tarama", "Windows Media Player Legacy",
+        "Windows PowerShell", "Windows PowerShell (x86)", "Windows PowerShell ISE", "Windows PowerShell ISE (x86)",
+        "Windows Yedekleme", "Wraith W1 Service", "Yazdırma Yönetimi", "Yerel Güvenlik İlkesi"
+    };
 
     private GlobalSystemMediaTransportControlsSessionManager? _mediaManager;
     private GlobalSystemMediaTransportControlsSession? _mediaSession;
@@ -56,6 +91,8 @@ public partial class MainWindow : Window
     private DispatcherTimer? _timerTimer;
     private DispatcherTimer? _weatherWatcher;
     private DispatcherTimer? _systemStatusWatcher;
+    private DispatcherTimer? _topBarWatcher;
+    private DispatcherTimer? _dockWatcher;
     private readonly HashSet<uint> _seenNotificationIds = new();
     private readonly List<string> _clipboardHistory = new();
     private IslandState _state = IslandState.MediaCompact;
@@ -75,6 +112,18 @@ public partial class MainWindow : Window
     private int _lastBatteryPercent = -1;
     private double _screenshotPreviewWidth = 510;
     private double _screenshotPreviewHeight = 190;
+    private bool _appBarRegistered;
+    private IntPtr _lastStyledForegroundWindow;
+    private DateTime _displayedCalendarMonth = new(DateTime.Today.Year, DateTime.Today.Month, 1);
+    private DateTime _selectedCalendarDate = DateTime.Today;
+    private bool _isUpdatingVolumeSlider;
+    private readonly Dictionary<string, ImageSource?> _dockIconCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, int> _dockFirstSeenOrder = new(StringComparer.OrdinalIgnoreCase);
+    private string _lastDockSignature = string.Empty;
+    private uint _lastActiveDockProcessId;
+    private int _nextDockOrder;
+    private System.Windows.Point? _dockDragStartPoint;
+    private List<LauncherApp>? _installedLauncherApps;
 
     private bool IsTimerActive => _timerEndsAt is not null;
 
@@ -87,10 +136,13 @@ public partial class MainWindow : Window
     {
         PositionAtTopCenter();
         HideFromAltTab();
+        RegisterAppBar();
         AddTransparentHitTestSupport();
         AddClipboardListener();
         RefreshStartupMenuState();
         InitializeAudio();
+        StartTopBarWatcher();
+        StartDockWatcher();
         StartFullscreenWatcher();
         StartPrivacyWatcher();
         if (_settings.SystemAlertsEnabled)
@@ -111,6 +163,7 @@ public partial class MainWindow : Window
 
     private void Window_Closed(object? sender, EventArgs e)
     {
+        UnregisterAppBar();
         if (_mediaManager is not null)
         {
             _mediaManager.CurrentSessionChanged -= MediaManager_CurrentSessionChanged;
@@ -133,6 +186,8 @@ public partial class MainWindow : Window
         _timerTimer?.Stop();
         _weatherWatcher?.Stop();
         _systemStatusWatcher?.Stop();
+        _topBarWatcher?.Stop();
+        _dockWatcher?.Stop();
     }
 
     private void PositionAtTopCenter()
@@ -142,9 +197,1860 @@ public partial class MainWindow : Window
             ? Forms.Screen.PrimaryScreen
             : screens[Math.Clamp(_settings.DisplayIndex, 0, screens.Length - 1)];
 
-        var bounds = screen?.WorkingArea ?? Forms.Screen.PrimaryScreen?.WorkingArea ?? Forms.SystemInformation.VirtualScreen;
-        Left = bounds.Left + (bounds.Width - Width) / 2.0;
+        var bounds = screen?.Bounds ?? Forms.Screen.PrimaryScreen?.Bounds ?? Forms.SystemInformation.VirtualScreen;
+        Width = bounds.Width;
+        Height = bounds.Height;
+        Left = bounds.Left;
         Top = bounds.Top;
+    }
+
+    private void RegisterAppBar()
+    {
+        var handle = new WindowInteropHelper(this).Handle;
+        if (handle == IntPtr.Zero)
+        {
+            return;
+        }
+
+        if (!_appBarRegistered)
+        {
+            var registration = AppBarData.Create(handle);
+            SHAppBarMessage(AbmNew, ref registration);
+            _appBarRegistered = true;
+        }
+
+        var screens = Forms.Screen.AllScreens;
+        var screen = screens.Length == 0
+            ? Forms.Screen.PrimaryScreen
+            : screens[Math.Clamp(_settings.DisplayIndex, 0, screens.Length - 1)];
+        var bounds = screen?.Bounds ?? Forms.SystemInformation.VirtualScreen;
+        var appBar = AppBarData.Create(handle);
+        appBar.Edge = AbeTop;
+        appBar.Rect = new NativeRect
+        {
+            Left = bounds.Left,
+            Top = bounds.Top,
+            Right = bounds.Right,
+            Bottom = bounds.Top + TopBarHeight
+        };
+
+        SHAppBarMessage(AbmQueryPos, ref appBar);
+        appBar.Rect.Top = bounds.Top;
+        appBar.Rect.Bottom = bounds.Top + TopBarHeight;
+        SHAppBarMessage(AbmSetPos, ref appBar);
+    }
+
+    private void UnregisterAppBar()
+    {
+        if (!_appBarRegistered)
+        {
+            return;
+        }
+
+        var appBar = AppBarData.Create(new WindowInteropHelper(this).Handle);
+        SHAppBarMessage(AbmRemove, ref appBar);
+        _appBarRegistered = false;
+    }
+
+    private void StartTopBarWatcher()
+    {
+        _topBarWatcher = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(1)
+        };
+        _topBarWatcher.Tick += (_, _) => UpdateTopBarStatus();
+        _topBarWatcher.Start();
+        UpdateTopBarStatus();
+    }
+
+    private void UpdateTopBarStatus()
+    {
+        var now = DateTime.Now;
+        TopBarClockText.Text = now.ToString("ddd  dd MMM  HH:mm");
+        CalendarClockText.Text = now.ToString("HH:mm:ss");
+        UpdateTopBarNetworkIcon();
+
+        try
+        {
+            if (_defaultPlaybackDevice is null)
+            {
+                TopBarVolumeIcon.Text = "\uE74F";
+                TopBarVolumeText.Text = "--%";
+            }
+            else
+            {
+                var volume = (int)Math.Round(_defaultPlaybackDevice.Volume);
+                TopBarVolumeText.Text = $"{volume}%";
+                TopBarVolumeIcon.Text = volume switch
+                {
+                    <= 0 => "\uE74F",
+                    <= 35 => "\uE993",
+                    <= 70 => "\uE994",
+                    _ => "\uE995"
+                };
+            }
+        }
+        catch
+        {
+            TopBarVolumeIcon.Text = "\uE74F";
+            TopBarVolumeText.Text = "--%";
+        }
+
+        UpdateTopBarForForegroundApplication();
+    }
+
+    private void UpdateTopBarNetworkIcon()
+    {
+        var activeInterfaces = NetworkInterface.GetAllNetworkInterfaces()
+            .Where(network => network.OperationalStatus is OperationalStatus.Up &&
+                              network.NetworkInterfaceType is not NetworkInterfaceType.Loopback &&
+                              network.NetworkInterfaceType is not NetworkInterfaceType.Tunnel)
+            .ToArray();
+
+        if (activeInterfaces.Any(network => network.NetworkInterfaceType is NetworkInterfaceType.Wireless80211))
+        {
+            TopBarNetworkText.Text = "\uE701";
+            TopBarNetworkButton.ToolTip = "Wi-Fi bağlı — ağ ayarlarını aç";
+            return;
+        }
+
+        if (activeInterfaces.Any(network => network.NetworkInterfaceType is NetworkInterfaceType.Ethernet or NetworkInterfaceType.GigabitEthernet or NetworkInterfaceType.FastEthernetFx or NetworkInterfaceType.FastEthernetT))
+        {
+            TopBarNetworkText.Text = "\uE839";
+            TopBarNetworkButton.ToolTip = "Ethernet bağlı — ağ ayarlarını aç";
+            return;
+        }
+
+        TopBarNetworkText.Text = "\uEB55";
+        TopBarNetworkButton.ToolTip = "Bağlantı yok — ağ ayarlarını aç";
+    }
+
+    private void UpdateTopBarForForegroundApplication()
+    {
+        var foreground = GetForegroundWindow();
+        var ownHandle = new WindowInteropHelper(this).Handle;
+        if (foreground == IntPtr.Zero || foreground == ownHandle || foreground == _lastStyledForegroundWindow)
+        {
+            return;
+        }
+
+        _lastStyledForegroundWindow = foreground;
+        try
+        {
+            var accent = GetWindowContentColor(foreground);
+            ApplyTopBarAccent(accent);
+
+            var title = new System.Text.StringBuilder(160);
+            if (GetWindowText(foreground, title, title.Capacity) > 0)
+            {
+                TopBarActivityText.Text = TrimForIsland(title.ToString(), 96);
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    private static WpfColor GetWindowContentColor(IntPtr windowHandle)
+    {
+        if (!GetWindowRect(windowHandle, out var windowRect))
+        {
+            return WpfColor.FromRgb(220, 70, 35);
+        }
+
+        var virtualScreen = Forms.SystemInformation.VirtualScreen;
+        var fullWindowRect = System.Drawing.Rectangle.Intersect(
+            new System.Drawing.Rectangle(
+                windowRect.Left,
+                windowRect.Top,
+                Math.Max(1, windowRect.Right - windowRect.Left),
+                Math.Max(1, windowRect.Bottom - windowRect.Top)),
+            virtualScreen);
+        var captureRect = new System.Drawing.Rectangle(
+            fullWindowRect.Left,
+            fullWindowRect.Top,
+            fullWindowRect.Width,
+            Math.Min(56, fullWindowRect.Height));
+        if (captureRect.Width < 2 || captureRect.Height < 2)
+        {
+            return WpfColor.FromRgb(220, 70, 35);
+        }
+
+        using var screenshot = new System.Drawing.Bitmap(captureRect.Width, captureRect.Height);
+        using (var graphics = System.Drawing.Graphics.FromImage(screenshot))
+        {
+            graphics.CopyFromScreen(captureRect.Location, System.Drawing.Point.Empty, captureRect.Size);
+        }
+
+        long red = 0;
+        long green = 0;
+        long blue = 0;
+        long weightTotal = 0;
+        var stepX = Math.Max(1, screenshot.Width / 160);
+        var stepY = 2;
+        for (var y = stepY / 2; y < screenshot.Height; y += stepY)
+        {
+            for (var x = stepX / 2; x < screenshot.Width; x += stepX)
+            {
+                var pixel = screenshot.GetPixel(x, y);
+                red += pixel.R;
+                green += pixel.G;
+                blue += pixel.B;
+                weightTotal++;
+            }
+        }
+
+        if (weightTotal == 0)
+        {
+            return WpfColor.FromRgb(110, 110, 120);
+        }
+
+        return WpfColor.FromRgb(
+            (byte)(red / weightTotal),
+            (byte)(green / weightTotal),
+            (byte)(blue / weightTotal));
+    }
+
+    private void ApplyTopBarAccent(WpfColor accent)
+    {
+        TopBar.Background = new SolidColorBrush(WpfColor.FromRgb(accent.R, accent.G, accent.B));
+        var highlight = WpfColor.FromRgb(
+            (byte)Math.Min(255, accent.R + 42),
+            (byte)Math.Min(255, accent.G + 42),
+            (byte)Math.Min(255, accent.B + 42));
+        TopBar.BorderBrush = new SolidColorBrush(WpfColor.FromArgb(190, highlight.R, highlight.G, highlight.B));
+        var accentBrush = new SolidColorBrush(highlight);
+        TopBarBrandMark.Foreground = accentBrush;
+        DockLauncherMark.Foreground = accentBrush;
+        TopBarBrandBadge.Background = new SolidColorBrush(WpfColor.FromArgb(28, highlight.R, highlight.G, highlight.B));
+        TopBarBrandBadge.BorderBrush = new SolidColorBrush(WpfColor.FromArgb(42, highlight.R, highlight.G, highlight.B));
+    }
+
+    private void TopBarHomeButton_Click(object sender, RoutedEventArgs e) => SettingsMenuItem_Click(sender, e);
+
+    private void TopBarNetworkButton_Click(object sender, RoutedEventArgs e) => TryOpenSettings("ms-settings:network-status");
+
+    private void TopBarVolumeButton_Click(object sender, RoutedEventArgs e)
+    {
+        VolumePopup.IsOpen = !VolumePopup.IsOpen;
+    }
+
+    private void VolumePopup_Opened(object sender, EventArgs e)
+    {
+        if (_defaultPlaybackDevice is null)
+        {
+            InitializeAudio();
+        }
+
+        _isUpdatingVolumeSlider = true;
+        var volume = _defaultPlaybackDevice?.Volume ?? 0;
+        VolumeSlider.Value = volume;
+        UpdateVolumePopupIcon(volume);
+        _isUpdatingVolumeSlider = false;
+    }
+
+    private void VolumeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_isUpdatingVolumeSlider || _defaultPlaybackDevice is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _defaultPlaybackDevice.Volume = e.NewValue;
+            UpdateVolumePopupIcon(e.NewValue);
+            TopBarVolumeText.Text = $"{Math.Round(e.NewValue)}%";
+        }
+        catch
+        {
+        }
+    }
+
+    private void UpdateVolumePopupIcon(double volume)
+    {
+        VolumePopupIcon.Text = volume switch
+        {
+            <= 0 => "\uE74F",
+            <= 35 => "\uE993",
+            <= 70 => "\uE994",
+            _ => "\uE995"
+        };
+    }
+
+    private async void VolumeOutputButton_Click(object sender, RoutedEventArgs e)
+    {
+        VolumePopup.IsOpen = false;
+        await PopulateOutputDevicesAsync();
+        OutputDevicePopup.IsOpen = true;
+    }
+
+    private async Task PopulateOutputDevicesAsync()
+    {
+        OutputDevicesPanel.Children.Clear();
+        try
+        {
+            _audioController ??= new CoreAudioController();
+            var devices = (await _audioController.GetPlaybackDevicesAsync(DeviceState.Active)).ToArray();
+            foreach (var device in devices)
+            {
+                var iconGlyph = GetOutputDeviceGlyph(device.Name);
+                var row = new Grid();
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(26) });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(24) });
+
+                var icon = new TextBlock
+                {
+                    Text = iconGlyph,
+                    FontFamily = new System.Windows.Media.FontFamily("Segoe MDL2 Assets"),
+                    FontSize = 15,
+                    Foreground = System.Windows.Media.Brushes.White,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                var name = new TextBlock
+                {
+                    Text = device.Name,
+                    FontSize = 12,
+                    Foreground = System.Windows.Media.Brushes.White,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                Grid.SetColumn(name, 1);
+                row.Children.Add(icon);
+                row.Children.Add(name);
+
+                if (device.IsDefaultDevice)
+                {
+                    var check = new TextBlock
+                    {
+                        Text = "✓",
+                        Foreground = new SolidColorBrush(WpfColor.FromRgb(66, 189, 245)),
+                        FontWeight = FontWeights.Bold,
+                        HorizontalAlignment = WpfHorizontalAlignment.Center,
+                        VerticalAlignment = VerticalAlignment.Center
+                    };
+                    Grid.SetColumn(check, 2);
+                    row.Children.Add(check);
+                }
+
+                var button = new WpfButton
+                {
+                    Style = (Style)Resources["OutputDeviceButtonStyle"],
+                    Content = row,
+                    Tag = device,
+                    Background = device.IsDefaultDevice
+                        ? new SolidColorBrush(WpfColor.FromArgb(24, 66, 189, 245))
+                        : System.Windows.Media.Brushes.Transparent
+                };
+                button.Click += OutputDeviceButton_Click;
+                OutputDevicesPanel.Children.Add(button);
+            }
+        }
+        catch
+        {
+            OutputDevicesPanel.Children.Add(new TextBlock
+            {
+                Text = "Ses cihazları okunamadı",
+                Foreground = new SolidColorBrush(WpfColor.FromRgb(180, 180, 185)),
+                Margin = new Thickness(10, 12, 10, 12)
+            });
+        }
+    }
+
+    private async void OutputDeviceButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not WpfButton { Tag: CoreAudioDevice device } || _audioController is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _audioController.SetDefaultDeviceAsync(device);
+            _defaultPlaybackDevice = device;
+            TopBarVolumeText.Text = $"{Math.Round(device.Volume)}%";
+        }
+        catch
+        {
+        }
+        finally
+        {
+            OutputDevicePopup.IsOpen = false;
+        }
+    }
+
+    private static string GetOutputDeviceGlyph(string deviceName)
+    {
+        var lowerName = deviceName.ToLowerInvariant();
+        if (lowerName.Contains("head") || lowerName.Contains("kulak") || lowerName.Contains("buds"))
+        {
+            return "\uE7F6";
+        }
+
+        if (lowerName.Contains("nvidia") || lowerName.Contains("monitor") || lowerName.Contains("display"))
+        {
+            return "\uE7F4";
+        }
+
+        return "\uE7F5";
+    }
+
+    private void TopBarClockButton_Click(object sender, RoutedEventArgs e)
+    {
+        CalendarPopup.IsOpen = !CalendarPopup.IsOpen;
+    }
+
+    private void CalendarPopup_Opened(object sender, EventArgs e)
+    {
+        _displayedCalendarMonth = new DateTime(_selectedCalendarDate.Year, _selectedCalendarDate.Month, 1);
+        UpdateCalendarPopup();
+    }
+
+    private void CalendarPreviousMonth_Click(object sender, RoutedEventArgs e)
+    {
+        _displayedCalendarMonth = _displayedCalendarMonth.AddMonths(-1);
+        UpdateCalendarPopup();
+    }
+
+    private void CalendarNextMonth_Click(object sender, RoutedEventArgs e)
+    {
+        _displayedCalendarMonth = _displayedCalendarMonth.AddMonths(1);
+        UpdateCalendarPopup();
+    }
+
+    private void CalendarDayButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not WpfButton { Tag: DateTime date })
+        {
+            return;
+        }
+
+        _selectedCalendarDate = date;
+        _displayedCalendarMonth = new DateTime(date.Year, date.Month, 1);
+        UpdateCalendarPopup();
+    }
+
+    private void UpdateCalendarPopup()
+    {
+        var turkishMonths = new[] { "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık" };
+        var turkishDays = new[] { "Pazar", "Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi" };
+        var today = DateTime.Today;
+        CalendarTodayText.Text = $"{today.Day} {turkishMonths[today.Month - 1]} {turkishDays[(int)today.DayOfWeek]}";
+        CalendarMonthText.Text = $"{turkishMonths[_displayedCalendarMonth.Month - 1]} {_displayedCalendarMonth.Year}";
+        CalendarDaysGrid.Children.Clear();
+
+        var mondayOffset = ((int)_displayedCalendarMonth.DayOfWeek + 6) % 7;
+        var firstVisibleDate = _displayedCalendarMonth.AddDays(-mondayOffset);
+        for (var index = 0; index < 42; index++)
+        {
+            var date = firstVisibleDate.AddDays(index);
+            var isCurrentMonth = date.Month == _displayedCalendarMonth.Month;
+            var isToday = date.Date == today;
+            var isSelected = date.Date == _selectedCalendarDate.Date;
+            var dayButton = new WpfButton
+            {
+                Content = date.Day.ToString(),
+                Tag = date,
+                Style = (Style)Resources["CalendarDayButtonStyle"],
+                Foreground = new SolidColorBrush(isCurrentMonth ? WpfColor.FromRgb(245, 245, 245) : WpfColor.FromRgb(105, 105, 110)),
+                Background = new SolidColorBrush(isSelected ? WpfColor.FromRgb(55, 175, 235) : isToday ? WpfColor.FromArgb(45, 255, 255, 255) : Colors.Transparent),
+                FontWeight = isToday ? FontWeights.SemiBold : FontWeights.Normal
+            };
+            dayButton.Click += CalendarDayButton_Click;
+            CalendarDaysGrid.Children.Add(dayButton);
+        }
+    }
+
+    private void TopBarClipboardButton_Click(object sender, RoutedEventArgs e) => ShowClipboardHistory();
+
+    private void TopBarTimerButton_Click(object sender, RoutedEventArgs e) => StartTimer(TimeSpan.FromMinutes(5));
+
+    private void TopBarAudioButton_Click(object sender, RoutedEventArgs e) => SwitchAudioOutputMenuItem_Click(sender, e);
+
+    private void DockLauncherButton_Click(object sender, RoutedEventArgs e) => ToggleStartMenu();
+
+    private void StartDockWatcher()
+    {
+        _dockWatcher = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(500)
+        };
+        _dockWatcher.Tick += (_, _) => UpdateDockApps();
+        _dockWatcher.Start();
+        UpdateDockApps();
+    }
+
+    private void UpdateDockApps()
+    {
+        var apps = GetDockApps();
+        var signature = string.Join("|", apps.Select(app => $"{app.Key}:{app.Handle}:{app.IsActive}:{app.IsPinned}:{app.IsRunning}"));
+        if (signature == _lastDockSignature)
+        {
+            return;
+        }
+
+        _lastDockSignature = signature;
+        DockAppsPanel.Children.Clear();
+        DockBar.Visibility = Visibility.Visible;
+
+        foreach (var app in apps)
+        {
+            DockAppsPanel.Children.Add(CreateDockButton(app));
+        }
+    }
+
+    private WpfButton CreateDockButton(DockApp app)
+    {
+        var iconHost = new Grid
+        {
+            Width = 38,
+            Height = 40
+        };
+
+        var iconBubble = new Border
+        {
+            Width = 36,
+            Height = 36,
+            CornerRadius = new CornerRadius(10),
+            Background = new SolidColorBrush(WpfColor.FromArgb(28, 255, 255, 255)),
+            HorizontalAlignment = WpfHorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        if (app.Icon is not null)
+        {
+            iconBubble.Child = new System.Windows.Controls.Image
+            {
+                Source = app.Icon,
+                Width = 27,
+                Height = 27,
+                Stretch = Stretch.Uniform,
+                HorizontalAlignment = WpfHorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+        }
+        else
+        {
+            iconBubble.Child = new TextBlock
+            {
+                Text = GetDockFallbackText(app.Title),
+                Foreground = System.Windows.Media.Brushes.White,
+                FontSize = 12,
+                FontWeight = FontWeights.SemiBold,
+                HorizontalAlignment = WpfHorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+        }
+
+        iconHost.Children.Add(iconBubble);
+
+        var activeDot = new Border
+        {
+            Width = app.IsActive ? 16 : 4,
+            Height = 2.5,
+            CornerRadius = new CornerRadius(2),
+            Background = new SolidColorBrush(app.IsActive
+                ? WpfColor.FromRgb(245, 245, 245)
+                : app.IsRunning
+                    ? WpfColor.FromArgb(115, 255, 255, 255)
+                    : WpfColor.FromArgb(45, 255, 255, 255)),
+            HorizontalAlignment = WpfHorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Margin = new Thickness(0, 0, 0, -6)
+        };
+        iconHost.Children.Add(activeDot);
+
+        var button = new WpfButton
+        {
+            Style = (Style)Resources["DockAppButtonStyle"],
+            Content = iconHost,
+            Tag = app,
+            ToolTip = app.Title,
+            AllowDrop = true
+        };
+        button.ContextMenu = CreateDockContextMenu(app);
+        button.PreviewMouseLeftButtonDown += DockAppButton_PreviewMouseLeftButtonDown;
+        button.PreviewMouseMove += DockAppButton_PreviewMouseMove;
+        button.Drop += DockAppButton_Drop;
+        button.Click += DockAppButton_Click;
+        return button;
+    }
+
+    private void DockAppButton_PreviewMouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        _dockDragStartPoint = e.GetPosition(this);
+    }
+
+    private void DockAppButton_PreviewMouseMove(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        if (sender is not WpfButton { Tag: DockApp app } ||
+            e.LeftButton != System.Windows.Input.MouseButtonState.Pressed ||
+            _dockDragStartPoint is not { } startPoint)
+        {
+            return;
+        }
+
+        var currentPoint = e.GetPosition(this);
+        if (Math.Abs(currentPoint.X - startPoint.X) < SystemParameters.MinimumHorizontalDragDistance &&
+            Math.Abs(currentPoint.Y - startPoint.Y) < SystemParameters.MinimumVerticalDragDistance)
+        {
+            return;
+        }
+
+        DragDrop.DoDragDrop((DependencyObject)sender, app.Key, System.Windows.DragDropEffects.Move);
+        _dockDragStartPoint = null;
+    }
+
+    private void DockAppButton_Drop(object sender, System.Windows.DragEventArgs e)
+    {
+        if (sender is not WpfButton { Tag: DockApp target } ||
+            e.Data.GetData(typeof(string)) is not string sourceKey ||
+            string.Equals(sourceKey, target.Key, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        MoveDockApp(sourceKey, target.Key);
+    }
+
+    private void DockAppButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not WpfButton { Tag: DockApp app })
+        {
+            return;
+        }
+
+        if (app.Handle != IntPtr.Zero)
+        {
+            if (IsIconic(app.Handle))
+            {
+                ShowWindow(app.Handle, SwRestore);
+            }
+
+            SetForegroundWindow(app.Handle);
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(app.Path) && IsLaunchablePath(app.Path))
+        {
+            LaunchPath(app.Path);
+        }
+    }
+
+    private static void LaunchPath(string path)
+    {
+        if (!IsLaunchablePath(path))
+        {
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = path,
+                UseShellExecute = true
+            });
+        }
+        catch
+        {
+            if (path.StartsWith("shell:", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = "explorer.exe",
+                        Arguments = path,
+                        UseShellExecute = true
+                    });
+                }
+                catch
+                {
+                }
+            }
+        }
+    }
+
+    private static void LaunchPathAsAdmin(string? path)
+    {
+        if (!IsAdminLaunchablePath(path))
+        {
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = path!,
+                UseShellExecute = true,
+                Verb = "runas"
+            });
+        }
+        catch
+        {
+        }
+    }
+
+    private static void CloseWindow(IntPtr handle)
+    {
+        if (handle != IntPtr.Zero)
+        {
+            PostMessage(handle, WmClose, IntPtr.Zero, IntPtr.Zero);
+        }
+    }
+
+    private ContextMenu CreateDockContextMenu(DockApp app)
+    {
+        var menu = CreateStyledContextMenu();
+        var openItem = CreateStyledMenuItem(app.IsRunning ? "Öne getir" : "Aç");
+        openItem.Click += (_, _) => DockAppButton_Click(new WpfButton { Tag = app }, new RoutedEventArgs());
+        menu.Items.Add(openItem);
+
+        if (IsAdminLaunchablePath(app.Path))
+        {
+            var adminItem = CreateStyledMenuItem(app.IsRunning
+                ? "Yönetici olarak yeniden aç"
+                : "Yönetici olarak çalıştır");
+            adminItem.Click += (_, _) => LaunchPathAsAdmin(app.Path);
+            menu.Items.Add(adminItem);
+        }
+
+        if (app.Handle != IntPtr.Zero)
+        {
+            var closeItem = CreateStyledMenuItem("Kapat");
+            closeItem.Click += (_, _) => CloseWindow(app.Handle);
+            menu.Items.Add(closeItem);
+        }
+
+        menu.Items.Add(CreateStyledSeparator());
+
+        var pinItem = CreateStyledMenuItem(app.IsPinned ? "Dock'tan kaldır" : "Dock'a sabitle");
+        pinItem.IsEnabled = !string.IsNullOrWhiteSpace(app.Path);
+        pinItem.Click += (_, _) => ToggleDockPin(app);
+        menu.Items.Add(pinItem);
+        return menu;
+    }
+
+    private ContextMenu CreateStyledContextMenu()
+    {
+        var menu = new ContextMenu();
+        if (TryFindResource(typeof(ContextMenu)) is Style style)
+        {
+            menu.Style = style;
+        }
+
+        return menu;
+    }
+
+    private MenuItem CreateStyledMenuItem(object header)
+    {
+        var item = new MenuItem { Header = header };
+        if (TryFindResource(typeof(MenuItem)) is Style style)
+        {
+            item.Style = style;
+        }
+
+        return item;
+    }
+
+    private Separator CreateStyledSeparator()
+    {
+        var separator = new Separator();
+        if (TryFindResource(typeof(Separator)) is Style style)
+        {
+            separator.Style = style;
+        }
+
+        return separator;
+    }
+
+    private void ToggleDockPin(DockApp app)
+    {
+        if (app.IsPinned)
+        {
+            _settings.PinnedDockApps.RemoveAll(pinned => string.Equals(pinned.Key, app.Key, StringComparison.OrdinalIgnoreCase));
+        }
+        else if (!string.IsNullOrWhiteSpace(app.Key) && !string.IsNullOrWhiteSpace(app.Path))
+        {
+            _settings.PinnedDockApps.RemoveAll(pinned => string.Equals(pinned.Key, app.Key, StringComparison.OrdinalIgnoreCase));
+            _settings.PinnedDockApps.Add(new DockPinnedApp
+            {
+                Key = app.Key,
+                Title = app.Title,
+                Path = app.Path
+            });
+        }
+
+        _settings.Save();
+        _lastDockSignature = string.Empty;
+        UpdateDockApps();
+    }
+
+    private void MoveDockApp(string sourceKey, string targetKey)
+    {
+        var currentOrder = GetDockApps()
+            .Select(app => app.Key)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        currentOrder.RemoveAll(key => string.Equals(key, sourceKey, StringComparison.OrdinalIgnoreCase));
+        var targetIndex = currentOrder.FindIndex(key => string.Equals(key, targetKey, StringComparison.OrdinalIgnoreCase));
+        if (targetIndex < 0)
+        {
+            currentOrder.Add(sourceKey);
+        }
+        else
+        {
+            currentOrder.Insert(targetIndex, sourceKey);
+        }
+
+        _settings.DockAppOrder = currentOrder;
+        _settings.Save();
+        _lastDockSignature = string.Empty;
+        UpdateDockApps();
+    }
+
+    private void ToggleStartMenu()
+    {
+        if (StartMenuPanel.Visibility == Visibility.Visible)
+        {
+            HideStartMenu();
+            return;
+        }
+
+        ShowStartMenu();
+    }
+
+    private void ShowStartMenu()
+    {
+        UpdateLauncherApps();
+        StartSearchBox.Text = string.Empty;
+        StartMenuPanel.Visibility = Visibility.Visible;
+        StartSearchBox.Focus();
+    }
+
+    private void HideStartMenu()
+    {
+        StartMenuPanel.Visibility = Visibility.Collapsed;
+        System.Windows.Input.Keyboard.ClearFocus();
+    }
+
+    private void UpdateLauncherApps()
+    {
+        var filter = StartSearchBox.Text.Trim();
+        var apps = GetDockApps()
+            .Where(app => string.IsNullOrWhiteSpace(filter) || app.Title.Contains(filter, StringComparison.CurrentCultureIgnoreCase))
+            .ToList();
+        var installedApps = GetInstalledLauncherApps()
+            .Where(app => string.IsNullOrWhiteSpace(filter) || app.Title.Contains(filter, StringComparison.CurrentCultureIgnoreCase))
+            .ToList();
+
+        LauncherPinnedPanel.Children.Clear();
+        LauncherRunningPanel.Children.Clear();
+        LauncherInstalledPanel.Children.Clear();
+
+        foreach (var app in apps.Where(app => app.IsPinned))
+        {
+            LauncherPinnedPanel.Children.Add(CreateLauncherButton(app));
+        }
+
+        foreach (var app in apps.Where(app => app.IsRunning))
+        {
+            LauncherRunningPanel.Children.Add(CreateLauncherButton(app));
+        }
+
+        foreach (var app in installedApps)
+        {
+            LauncherInstalledPanel.Children.Add(CreateLauncherButton(app));
+        }
+    }
+
+    private WpfButton CreateLauncherButton(DockApp app)
+    {
+        return CreateLauncherButton(app.Title, app.Icon, app, () =>
+        {
+            HideStartMenu();
+            DockAppButton_Click(new WpfButton { Tag = app }, new RoutedEventArgs());
+        });
+    }
+
+    private WpfButton CreateLauncherButton(LauncherApp app)
+    {
+        return CreateLauncherButton(app.Title, app.Icon, app, () =>
+        {
+            HideStartMenu();
+            LaunchPath(app.Path);
+        });
+    }
+
+    private WpfButton CreateLauncherButton(string title, ImageSource? icon, object tag, Action action)
+    {
+        var root = new StackPanel
+        {
+            Width = 78,
+            Margin = new Thickness(4, 6, 4, 8)
+        };
+
+        var iconHost = new Border
+        {
+            Width = 42,
+            Height = 42,
+            CornerRadius = new CornerRadius(12),
+            Background = new SolidColorBrush(WpfColor.FromArgb(28, 255, 255, 255)),
+            HorizontalAlignment = WpfHorizontalAlignment.Center
+        };
+
+        if (icon is not null)
+        {
+            iconHost.Child = new System.Windows.Controls.Image
+            {
+                Source = icon,
+                Width = 30,
+                Height = 30,
+                Stretch = Stretch.Uniform,
+                HorizontalAlignment = WpfHorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+        }
+        else
+        {
+            iconHost.Child = new TextBlock
+            {
+                Text = GetDockFallbackText(title),
+                Foreground = System.Windows.Media.Brushes.White,
+                FontSize = 13,
+                FontWeight = FontWeights.SemiBold,
+                HorizontalAlignment = WpfHorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+        }
+
+        root.Children.Add(iconHost);
+        root.Children.Add(new TextBlock
+        {
+            Text = TrimForIsland(title, 18),
+            Foreground = new SolidColorBrush(WpfColor.FromArgb(220, 255, 255, 255)),
+            FontSize = 10.5,
+            TextAlignment = TextAlignment.Center,
+            TextWrapping = TextWrapping.Wrap,
+            MaxHeight = 34,
+            Margin = new Thickness(0, 6, 0, 0)
+        });
+
+        var button = new WpfButton
+        {
+            Style = (Style)Resources["TopBarButtonStyle"],
+            Height = 92,
+            Padding = new Thickness(0),
+            Content = root,
+            Tag = tag,
+            ToolTip = title
+        };
+        button.ContextMenu = CreateLauncherContextMenu(tag, action);
+        button.Click += (_, _) => action();
+        return button;
+    }
+
+    private ContextMenu CreateLauncherContextMenu(object tag, Action openAction)
+    {
+        if (tag is DockApp dockApp)
+        {
+            return CreateDockContextMenu(dockApp);
+        }
+
+        var menu = CreateStyledContextMenu();
+        var openItem = CreateStyledMenuItem("Aç");
+        openItem.Click += (_, _) => openAction();
+        menu.Items.Add(openItem);
+
+        if (tag is LauncherApp launcherApp)
+        {
+            if (IsAdminLaunchablePath(launcherApp.Path))
+            {
+                var adminItem = CreateStyledMenuItem("Yönetici olarak çalıştır");
+                adminItem.Click += (_, _) => LaunchPathAsAdmin(launcherApp.Path);
+                menu.Items.Add(adminItem);
+            }
+
+            menu.Items.Add(CreateStyledSeparator());
+            var hideItem = CreateStyledMenuItem("Launcher'dan gizle");
+            hideItem.Click += (_, _) => HideLauncherApp(launcherApp);
+            menu.Items.Add(hideItem);
+        }
+
+        return menu;
+    }
+
+    private void HideLauncherApp(LauncherApp app)
+    {
+        if (!_settings.HiddenLauncherApps.Contains(app.Path, StringComparer.OrdinalIgnoreCase))
+        {
+            _settings.HiddenLauncherApps.Add(app.Path);
+            _settings.Save();
+        }
+
+        _installedLauncherApps = null;
+        UpdateLauncherApps();
+    }
+
+    private void StartSearchBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (StartMenuPanel.Visibility == Visibility.Visible)
+        {
+            UpdateLauncherApps();
+        }
+    }
+
+    private void StartSearchBox_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key is System.Windows.Input.Key.Escape)
+        {
+            HideStartMenu();
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key is not System.Windows.Input.Key.Enter)
+        {
+            return;
+        }
+
+        var query = StartSearchBox.Text.Trim();
+        if (!string.IsNullOrWhiteSpace(query))
+        {
+            var dockMatch = GetDockApps()
+                .Where(app => app.Title.Contains(query, StringComparison.CurrentCultureIgnoreCase))
+                .OrderByDescending(app => app.Title.StartsWith(query, StringComparison.CurrentCultureIgnoreCase))
+                .ThenBy(app => app.Title, StringComparer.CurrentCultureIgnoreCase)
+                .FirstOrDefault();
+            if (dockMatch is not null)
+            {
+                DockAppButton_Click(new WpfButton { Tag = dockMatch }, new RoutedEventArgs());
+            }
+            else
+            {
+                var installedMatch = GetInstalledLauncherApps()
+                    .Where(app => app.Title.Contains(query, StringComparison.CurrentCultureIgnoreCase))
+                    .OrderByDescending(app => app.Title.StartsWith(query, StringComparison.CurrentCultureIgnoreCase))
+                    .ThenBy(app => app.Title, StringComparer.CurrentCultureIgnoreCase)
+                    .FirstOrDefault();
+                if (installedMatch is not null)
+                {
+                    LaunchPath(installedMatch.Path);
+                }
+            }
+        }
+
+        HideStartMenu();
+        e.Handled = true;
+    }
+
+    private List<LauncherApp> GetInstalledLauncherApps()
+    {
+        if (_installedLauncherApps is not null)
+        {
+            return _installedLauncherApps;
+        }
+
+        _installedLauncherApps = GetStartMenuLauncherApps()
+            .Concat(GetShellLauncherApps())
+            .Concat(GetKnownRegistryLauncherApps())
+            .Concat(GetKnownStoreLauncherApps())
+            .Concat(GetSteamLauncherApps())
+            .Where(app => !IsLauncherNoise(app.Title))
+            .Where(app => !_settings.HiddenLauncherApps.Contains(app.Path, StringComparer.OrdinalIgnoreCase))
+            .GroupBy(app => app.Title, StringComparer.CurrentCultureIgnoreCase)
+            .Select(group => group
+                .OrderByDescending(app => IsShortcutPath(app.Path))
+                .ThenBy(app => app.Path.Length)
+                .First())
+            .OrderBy(app => app.Title, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+
+        return _installedLauncherApps;
+    }
+
+    private static IEnumerable<LauncherApp> GetStartMenuLauncherApps()
+    {
+        var shortcutRoots = new[]
+            {
+                Environment.GetFolderPath(Environment.SpecialFolder.StartMenu),
+                Environment.GetFolderPath(Environment.SpecialFolder.CommonStartMenu),
+                Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
+                Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory)
+            }
+            .Where(path => !string.IsNullOrWhiteSpace(path) && Directory.Exists(path));
+
+        foreach (var root in shortcutRoots)
+        {
+            IEnumerable<string> shortcuts;
+            try
+            {
+                shortcuts = Directory.EnumerateFiles(root, "*.lnk", SearchOption.AllDirectories).ToArray();
+            }
+            catch
+            {
+                continue;
+            }
+
+            foreach (var shortcut in shortcuts)
+            {
+                var title = Path.GetFileNameWithoutExtension(shortcut);
+                if (IsLauncherNoise(title))
+                {
+                    continue;
+                }
+
+                yield return new LauncherApp(title, shortcut, TryCreateIconSourceFromFile(shortcut));
+            }
+        }
+    }
+
+    private static IEnumerable<LauncherApp> GetShellLauncherApps()
+    {
+        var apps = new List<LauncherApp>();
+        object? shellObject = null;
+        object? folderObject = null;
+        object? itemsObject = null;
+
+        try
+        {
+            var shellType = Type.GetTypeFromProgID("Shell.Application");
+            if (shellType is null)
+            {
+                return apps;
+            }
+
+            shellObject = Activator.CreateInstance(shellType);
+            if (shellObject is null)
+            {
+                return apps;
+            }
+
+            dynamic shell = shellObject;
+            folderObject = shell.NameSpace("shell:AppsFolder");
+            if (folderObject is null)
+            {
+                return apps;
+            }
+
+            dynamic folder = folderObject;
+            itemsObject = folder.Items();
+            dynamic items = itemsObject;
+            var count = (int)items.Count;
+            for (var index = 0; index < count; index++)
+            {
+                object? itemObject = null;
+                try
+                {
+                    itemObject = items.Item(index);
+                    if (itemObject is null)
+                    {
+                        continue;
+                    }
+
+                    dynamic item = itemObject;
+                    var title = Convert.ToString(item.Name)?.Trim();
+                    var appId = Convert.ToString(item.ExtendedProperty("System.AppUserModel.ID"))?.Trim();
+                    if (string.IsNullOrWhiteSpace(title) ||
+                        string.IsNullOrWhiteSpace(appId) ||
+                        IsShellLauncherNoise(title, appId) ||
+                        appId?.StartsWith("http:", StringComparison.OrdinalIgnoreCase) == true ||
+                        appId?.StartsWith("https:", StringComparison.OrdinalIgnoreCase) == true)
+                    {
+                        continue;
+                    }
+
+                    var directPath = Convert.ToString(item.Path)?.Trim();
+                    var launchPath = !string.IsNullOrWhiteSpace(directPath) && File.Exists(directPath)
+                        ? directPath
+                        : $@"shell:AppsFolder\{appId}";
+                    var icon = !string.IsNullOrWhiteSpace(directPath) && File.Exists(directPath)
+                        ? TryCreateIconSourceFromFile(directPath)
+                        : null;
+                    apps.Add(new LauncherApp(title, launchPath, icon));
+                }
+                catch
+                {
+                }
+                finally
+                {
+                    ReleaseComObject(itemObject);
+                }
+            }
+        }
+        catch
+        {
+        }
+        finally
+        {
+            ReleaseComObject(itemsObject);
+            ReleaseComObject(folderObject);
+            ReleaseComObject(shellObject);
+        }
+
+        return apps;
+    }
+
+    private static void ReleaseComObject(object? value)
+    {
+        if (value is not null && Marshal.IsComObject(value))
+        {
+            try
+            {
+                Marshal.FinalReleaseComObject(value);
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    private static IEnumerable<LauncherApp> GetKnownRegistryLauncherApps()
+    {
+        var allowedNames = new[]
+        {
+            "Spotify",
+            "Steam",
+            "Epic Games Launcher",
+            "Discord",
+            "Brave",
+            "Google Chrome",
+            "Riot Client",
+            "VALORANT",
+            "Roblox Player",
+            "Roblox Studio",
+            "WhatsApp",
+            "Telegram",
+            "Skype"
+        };
+        var uninstallRoots = new[]
+        {
+            (RegistryHive.CurrentUser, RegistryView.Registry64),
+            (RegistryHive.LocalMachine, RegistryView.Registry64),
+            (RegistryHive.LocalMachine, RegistryView.Registry32)
+        };
+
+        foreach (var (hive, view) in uninstallRoots)
+        {
+            using var baseKey = RegistryKey.OpenBaseKey(hive, view);
+            using var uninstallKey = baseKey.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall");
+            if (uninstallKey is null)
+            {
+                continue;
+            }
+
+            foreach (var subKeyName in uninstallKey.GetSubKeyNames())
+            {
+                using var appKey = uninstallKey.OpenSubKey(subKeyName);
+                var title = appKey?.GetValue("DisplayName") as string;
+                if (string.IsNullOrWhiteSpace(title) ||
+                    IsLauncherNoise(title) ||
+                    !allowedNames.Any(name => title.Contains(name, StringComparison.OrdinalIgnoreCase)))
+                {
+                    continue;
+                }
+
+                var launchPath = FindRegistryLaunchPath(appKey);
+                if (string.IsNullOrWhiteSpace(launchPath))
+                {
+                    continue;
+                }
+
+                var iconPath = NormalizeExecutablePath(appKey?.GetValue("DisplayIcon") as string) ?? launchPath;
+                yield return new LauncherApp(title, launchPath, TryCreateIconSourceFromFile(iconPath));
+            }
+        }
+    }
+
+    private static string? FindRegistryLaunchPath(RegistryKey? appKey)
+    {
+        if (appKey is null)
+        {
+            return null;
+        }
+
+        var displayIcon = NormalizeExecutablePath(appKey.GetValue("DisplayIcon") as string);
+        if (!string.IsNullOrWhiteSpace(displayIcon) && File.Exists(displayIcon))
+        {
+            return displayIcon;
+        }
+
+        var installLocation = appKey.GetValue("InstallLocation") as string;
+        if (!string.IsNullOrWhiteSpace(installLocation) && Directory.Exists(installLocation))
+        {
+            try
+            {
+                return Directory.EnumerateFiles(installLocation, "*.exe", SearchOption.TopDirectoryOnly)
+                    .Where(path => !IsLauncherNoise(Path.GetFileNameWithoutExtension(path)))
+                    .OrderBy(path => path.Length)
+                    .FirstOrDefault();
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        return null;
+    }
+
+    private static IEnumerable<LauncherApp> GetKnownStoreLauncherApps()
+    {
+        var localWindowsApps = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Microsoft",
+            "WindowsApps");
+        var knownApps = new[]
+        {
+            (Title: "Spotify", AppId: @"shell:AppsFolder\SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify", Alias: "Spotify.exe"),
+            (Title: "WhatsApp", AppId: @"shell:AppsFolder\5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App", Alias: "WhatsApp.exe"),
+            (Title: "ChatGPT", AppId: @"shell:AppsFolder\OpenAI.ChatGPT-Desktop_2p2nqsd0c76g0!ChatGPT", Alias: "ChatGPT.exe")
+        };
+
+        foreach (var app in knownApps)
+        {
+            var aliasPath = Path.Combine(localWindowsApps, app.Alias);
+            if (File.Exists(aliasPath))
+            {
+                yield return new LauncherApp(app.Title, app.AppId, TryCreateIconSourceFromFile(aliasPath));
+            }
+        }
+    }
+
+    private static IEnumerable<LauncherApp> GetSteamLauncherApps()
+    {
+        var steamPath = GetSteamPath();
+        if (string.IsNullOrWhiteSpace(steamPath))
+        {
+            yield break;
+        }
+
+        var steamIcon = TryCreateIconSourceFromFile(Path.Combine(steamPath, "steam.exe"));
+        foreach (var library in GetSteamLibraryFolders(steamPath))
+        {
+            var steamAppsPath = Path.Combine(library, "steamapps");
+            if (!Directory.Exists(steamAppsPath))
+            {
+                continue;
+            }
+
+            IEnumerable<string> manifests;
+            try
+            {
+                manifests = Directory.EnumerateFiles(steamAppsPath, "appmanifest_*.acf", SearchOption.TopDirectoryOnly).ToArray();
+            }
+            catch
+            {
+                continue;
+            }
+
+            foreach (var manifest in manifests)
+            {
+                var text = ReadAllTextSafely(manifest);
+                var name = MatchAcfValue(text, "name");
+                var appId = MatchAcfValue(text, "appid") ?? Regex.Match(Path.GetFileNameWithoutExtension(manifest), @"\d+").Value;
+                if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(appId))
+                {
+                    continue;
+                }
+
+                yield return new LauncherApp(name, $"steam://rungameid/{appId}", steamIcon);
+            }
+        }
+    }
+
+    private List<DockApp> GetDockApps()
+    {
+        var ownHandle = new WindowInteropHelper(this).Handle;
+        var activeWindow = GetForegroundWindow();
+        GetWindowThreadProcessId(activeWindow, out var activeProcessId);
+        if (activeProcessId != 0 && activeProcessId != (uint)Environment.ProcessId)
+        {
+            _lastActiveDockProcessId = activeProcessId;
+        }
+
+        var appsByProcess = new Dictionary<string, DockApp>(StringComparer.OrdinalIgnoreCase);
+
+        EnumWindows((handle, _) =>
+        {
+            if (!IsDockWindow(handle, ownHandle))
+            {
+                return true;
+            }
+
+            GetWindowThreadProcessId(handle, out var processId);
+            var title = GetWindowTitle(handle);
+            var processPath = TryGetProcessPath(processId);
+            var processKey = GetDockProcessKey(processId, handle, processPath);
+            var icon = GetDockIcon(handle, processId);
+            var app = new DockApp(processKey, handle, title, processPath, icon, processId == _lastActiveDockProcessId, true, IsDockAppPinned(processKey));
+
+            if (!appsByProcess.TryGetValue(processKey, out var existing) || app.IsActive || string.Compare(app.Title, existing.Title, StringComparison.CurrentCultureIgnoreCase) < 0)
+            {
+                appsByProcess[processKey] = app;
+            }
+
+            return true;
+        }, IntPtr.Zero);
+
+        foreach (var pinned in _settings.PinnedDockApps)
+        {
+            if (string.IsNullOrWhiteSpace(pinned.Key) || appsByProcess.ContainsKey(pinned.Key))
+            {
+                continue;
+            }
+
+            var icon = TryCreateIconSourceFromFile(pinned.Path);
+            appsByProcess[pinned.Key] = new DockApp(pinned.Key, IntPtr.Zero, pinned.Title, pinned.Path, icon, false, false, true);
+        }
+
+        var orderedKeys = _settings.DockAppOrder
+            .Select((key, index) => new { key, index })
+            .GroupBy(item => item.key, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First().index, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var key in appsByProcess.Keys)
+        {
+            if (!_dockFirstSeenOrder.ContainsKey(key))
+            {
+                _dockFirstSeenOrder[key] = _nextDockOrder++;
+            }
+        }
+
+        return appsByProcess.Values
+            .OrderBy(app => orderedKeys.TryGetValue(app.Key, out var index) ? index : int.MaxValue)
+            .ThenByDescending(app => app.IsPinned)
+            .ThenBy(app => _dockFirstSeenOrder[app.Key])
+            .Take(17)
+            .ToList();
+    }
+
+    private bool IsDockWindow(IntPtr handle, IntPtr ownHandle)
+    {
+        if (handle == IntPtr.Zero || handle == ownHandle || !IsWindowVisible(handle))
+        {
+            return false;
+        }
+
+        GetWindowThreadProcessId(handle, out var processId);
+        if (processId == (uint)Environment.ProcessId)
+        {
+            return false;
+        }
+
+        var title = GetWindowTitle(handle);
+        var className = GetWindowClassName(handle);
+        var processName = TryGetProcessName(processId);
+        var processPath = TryGetProcessPath(processId);
+        if (IsDockNoiseWindow(title, className, processName, processPath))
+        {
+            return false;
+        }
+
+        var exStyle = GetWindowLong(handle, GwlExStyle);
+        if ((exStyle & WsExToolWindow) != 0 || GetWindow(handle, GwOwner) != IntPtr.Zero)
+        {
+            return false;
+        }
+
+        if (!IsIconic(handle) &&
+            (!GetWindowRect(handle, out var rect) || rect.Right - rect.Left < 80 || rect.Bottom - rect.Top < 60))
+        {
+            return false;
+        }
+
+        return !IsShellSurfaceWindow(handle);
+    }
+
+    private bool IsDockAppPinned(string key)
+    {
+        return _settings.PinnedDockApps.Any(app => string.Equals(app.Key, key, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool IsDockNoiseWindow(string title, string className, string? processName, string? processPath)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            return true;
+        }
+
+        if (title.Contains("WinDynamicIsland", StringComparison.OrdinalIgnoreCase) ||
+            title.Equals("Windows Giriş Deneyimi", StringComparison.OrdinalIgnoreCase) ||
+            title.Equals("Windows Input Experience", StringComparison.OrdinalIgnoreCase) ||
+            title.Equals("Program Manager", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (className is "Progman" or "WorkerW" or "Shell_TrayWnd" or "Windows.UI.Core.CoreWindow")
+        {
+            return true;
+        }
+
+        if (processName is null)
+        {
+            return false;
+        }
+
+        if (processName.Equals("WinDynamicIsland", StringComparison.OrdinalIgnoreCase) ||
+            processName.Equals("TextInputHost", StringComparison.OrdinalIgnoreCase) ||
+            processName.Equals("ShellExperienceHost", StringComparison.OrdinalIgnoreCase) ||
+            processName.Equals("StartMenuExperienceHost", StringComparison.OrdinalIgnoreCase) ||
+            processName.Equals("SearchHost", StringComparison.OrdinalIgnoreCase) ||
+            processName.Equals("ApplicationFrameHost", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return processPath?.Contains(@"\Windows\SystemApps\", StringComparison.OrdinalIgnoreCase) == true;
+    }
+
+    private static string GetWindowTitle(IntPtr handle)
+    {
+        var title = new System.Text.StringBuilder(180);
+        return GetWindowText(handle, title, title.Capacity) > 0 ? title.ToString() : string.Empty;
+    }
+
+    private string GetDockProcessKey(uint processId, IntPtr handle, string? processPath)
+    {
+        if (processId == 0)
+        {
+            return $"window:{handle}";
+        }
+
+        return processPath ?? $"process:{processId}";
+    }
+
+    private ImageSource? GetDockIcon(IntPtr windowHandle, uint processId)
+    {
+        if (processId == 0)
+        {
+            return null;
+        }
+
+        var windowIcon = TryCreateIconSourceFromWindow(windowHandle);
+        if (windowIcon is not null)
+        {
+            return windowIcon;
+        }
+
+        var path = TryGetProcessPath(processId);
+        var key = path ?? $"process:{processId}";
+
+        if (_dockIconCache.TryGetValue(key, out var cached))
+        {
+            return cached;
+        }
+
+        var source = TryCreateIconSourceFromFile(path);
+
+        _dockIconCache[key] = source;
+        return source;
+    }
+
+    private static ImageSource? TryCreateIconSourceFromWindow(IntPtr windowHandle)
+    {
+        var iconHandle = SendMessage(windowHandle, WmGetIcon, new IntPtr(IconBig), IntPtr.Zero);
+        if (iconHandle == IntPtr.Zero)
+        {
+            iconHandle = SendMessage(windowHandle, WmGetIcon, new IntPtr(IconSmall2), IntPtr.Zero);
+        }
+
+        if (iconHandle == IntPtr.Zero)
+        {
+            iconHandle = SendMessage(windowHandle, WmGetIcon, new IntPtr(IconSmall), IntPtr.Zero);
+        }
+
+        if (iconHandle == IntPtr.Zero)
+        {
+            iconHandle = GetClassLongPtr(windowHandle, GclpHicon);
+        }
+
+        if (iconHandle == IntPtr.Zero)
+        {
+            iconHandle = GetClassLongPtr(windowHandle, GclpHiconSmall);
+        }
+
+        return CreateImageSourceFromIconHandle(iconHandle, destroyHandle: false);
+    }
+
+    private static ImageSource? TryCreateIconSourceFromFile(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            return null;
+        }
+
+        var fileInfo = new ShFileInfo();
+        var result = SHGetFileInfo(path, 0, ref fileInfo, (uint)Marshal.SizeOf<ShFileInfo>(), ShgfiIcon | ShgfiLargeIcon);
+        if (result != IntPtr.Zero && fileInfo.IconHandle != IntPtr.Zero)
+        {
+            return CreateImageSourceFromIconHandle(fileInfo.IconHandle, destroyHandle: true);
+        }
+
+        try
+        {
+            using var associatedIcon = System.Drawing.Icon.ExtractAssociatedIcon(path);
+            using var icon = associatedIcon?.Clone() as System.Drawing.Icon;
+            return icon is null
+                ? null
+                : CreateImageSourceFromIconHandle(icon.Handle, destroyHandle: false);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static ImageSource? CreateImageSourceFromIconHandle(IntPtr iconHandle, bool destroyHandle)
+    {
+        if (iconHandle == IntPtr.Zero)
+        {
+            return null;
+        }
+
+        try
+        {
+            var source = Imaging.CreateBitmapSourceFromHIcon(
+                iconHandle,
+                Int32Rect.Empty,
+                BitmapSizeOptions.FromWidthAndHeight(48, 48));
+            source.Freeze();
+            return source;
+        }
+        catch
+        {
+            return null;
+        }
+        finally
+        {
+            if (destroyHandle)
+            {
+                DestroyIcon(iconHandle);
+            }
+        }
+    }
+
+    private static string? TryGetProcessPath(uint processId)
+    {
+        try
+        {
+            using var process = Process.GetProcessById((int)processId);
+            var path = process.MainModule?.FileName;
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                return path;
+            }
+        }
+        catch
+        {
+        }
+
+        var processHandle = OpenProcess(ProcessQueryLimitedInformation, false, processId);
+        if (processHandle == IntPtr.Zero)
+        {
+            return null;
+        }
+
+        try
+        {
+            var pathBuilder = new System.Text.StringBuilder(1024);
+            var capacity = pathBuilder.Capacity;
+            return QueryFullProcessImageName(processHandle, 0, pathBuilder, ref capacity)
+                ? pathBuilder.ToString()
+                : null;
+        }
+        finally
+        {
+            CloseHandle(processHandle);
+        }
+    }
+
+    private static string? TryGetProcessName(uint processId)
+    {
+        if (processId == 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            using var process = Process.GetProcessById((int)processId);
+            return process.ProcessName;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string? NormalizeExecutablePath(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var text = Environment.ExpandEnvironmentVariables(value.Trim());
+        if (text.StartsWith('"'))
+        {
+            var endQuote = text.IndexOf('"', 1);
+            if (endQuote > 1)
+            {
+                text = text[1..endQuote];
+            }
+        }
+        else
+        {
+            var exeIndex = text.IndexOf(".exe", StringComparison.OrdinalIgnoreCase);
+            if (exeIndex < 0)
+            {
+                return null;
+            }
+
+            if (exeIndex >= 0)
+            {
+                text = text[..(exeIndex + 4)];
+            }
+        }
+
+        text = text.Trim().Trim(',');
+        return Path.GetExtension(text).Equals(".exe", StringComparison.OrdinalIgnoreCase) && File.Exists(text) ? text : null;
+    }
+
+    private static bool IsLaunchablePath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return false;
+        }
+
+        if (path.StartsWith("steam://", StringComparison.OrdinalIgnoreCase) ||
+            path.StartsWith("shell:", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var extension = Path.GetExtension(path);
+        return File.Exists(path) &&
+               (extension.Equals(".lnk", StringComparison.OrdinalIgnoreCase) ||
+                extension.Equals(".exe", StringComparison.OrdinalIgnoreCase) ||
+                extension.Equals(".url", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool IsAdminLaunchablePath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            return false;
+        }
+
+        var extension = Path.GetExtension(path);
+        return extension.Equals(".exe", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".lnk", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsShortcutPath(string path)
+    {
+        return Path.GetExtension(path).Equals(".lnk", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsLauncherNoise(string title)
+    {
+        return string.IsNullOrWhiteSpace(title) ||
+               title.Contains("Uninstall", StringComparison.OrdinalIgnoreCase) ||
+               title.Contains("Kaldır", StringComparison.OrdinalIgnoreCase) ||
+               title.Contains("Update", StringComparison.OrdinalIgnoreCase) ||
+               title.Contains("Updater", StringComparison.OrdinalIgnoreCase) ||
+               title.Contains("Help", StringComparison.OrdinalIgnoreCase) ||
+               title.Contains("Manual", StringComparison.OrdinalIgnoreCase) ||
+               title.Contains("Support Center", StringComparison.OrdinalIgnoreCase) ||
+               title.Contains("Documentation", StringComparison.OrdinalIgnoreCase) ||
+               title.Contains("Readme", StringComparison.OrdinalIgnoreCase) ||
+               title.Contains("Visual C++", StringComparison.OrdinalIgnoreCase) ||
+               title.Contains("Redistributable", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsShellLauncherNoise(string title, string appId)
+    {
+        return IsLauncherNoise(title) ||
+               ShellLauncherNoiseTitles.Contains(title) ||
+               title.Contains("Belgeler", StringComparison.CurrentCultureIgnoreCase) ||
+               title.Contains(" sitesi", StringComparison.CurrentCultureIgnoreCase) ||
+               title.Contains("Config File", StringComparison.OrdinalIgnoreCase) ||
+               title.Contains("Release Notes", StringComparison.OrdinalIgnoreCase) ||
+               title.EndsWith(" Demo", StringComparison.OrdinalIgnoreCase) ||
+               appId.EndsWith(".msc", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? GetSteamPath()
+    {
+        var registryPaths = new[]
+        {
+            @"SOFTWARE\Valve\Steam",
+            @"SOFTWARE\WOW6432Node\Valve\Steam"
+        };
+
+        foreach (var registryPath in registryPaths)
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(registryPath) ?? Registry.LocalMachine.OpenSubKey(registryPath);
+            var path = key?.GetValue("SteamPath") as string ?? key?.GetValue("InstallPath") as string;
+            if (!string.IsNullOrWhiteSpace(path) && Directory.Exists(path))
+            {
+                return path.Replace('/', '\\');
+            }
+        }
+
+        var fallback = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Steam");
+        return Directory.Exists(fallback) ? fallback : null;
+    }
+
+    private static IEnumerable<string> GetSteamLibraryFolders(string steamPath)
+    {
+        yield return steamPath;
+
+        var libraryFile = Path.Combine(steamPath, "steamapps", "libraryfolders.vdf");
+        var text = ReadAllTextSafely(libraryFile);
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            yield break;
+        }
+
+        foreach (Match match in Regex.Matches(text, "\"path\"\\s+\"([^\"]+)\"", RegexOptions.IgnoreCase))
+        {
+            var path = Regex.Unescape(match.Groups[1].Value).Replace(@"\\", @"\");
+            if (Directory.Exists(path))
+            {
+                yield return path;
+            }
+        }
+    }
+
+    private static string? MatchAcfValue(string text, string key)
+    {
+        var match = Regex.Match(text, $"\"{Regex.Escape(key)}\"\\s+\"([^\"]*)\"", RegexOptions.IgnoreCase);
+        return match.Success ? match.Groups[1].Value : null;
+    }
+
+    private static string ReadAllTextSafely(string path)
+    {
+        try
+        {
+            return File.Exists(path) ? File.ReadAllText(path) : string.Empty;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private static string GetDockFallbackText(string title)
+    {
+        var trimmed = title.Trim();
+        return trimmed.Length == 0 ? "?" : trimmed[..Math.Min(2, trimmed.Length)].ToUpperInvariant();
     }
 
     private void HideFromAltTab()
@@ -435,6 +2341,12 @@ public partial class MainWindow : Window
         }
 
         var monitor = MonitorFromWindow(foreground, MonitorDefaultToNearest);
+        var ownMonitor = MonitorFromWindow(ownHandle, MonitorDefaultToNearest);
+        if (monitor != ownMonitor)
+        {
+            return false;
+        }
+
         var monitorInfo = MonitorInfo.Create();
         if (monitor == IntPtr.Zero || !GetMonitorInfo(monitor, ref monitorInfo))
         {
@@ -481,6 +2393,7 @@ public partial class MainWindow : Window
         if (msg == WmDisplayChange)
         {
             PositionAtTopCenter();
+            RegisterAppBar();
             return IntPtr.Zero;
         }
 
@@ -490,11 +2403,42 @@ public partial class MainWindow : Window
         }
 
         var point = GetPointFromLParam(lParam);
-        var relative = Island.PointFromScreen(point);
-        var bounds = new Rect(0, 0, Island.ActualWidth, Island.ActualHeight);
-        if (bounds.Contains(relative))
+        var hoverZoneRelative = IslandHoverZone.PointFromScreen(point);
+        var hoverZoneBounds = new Rect(0, 0, IslandHoverZone.ActualWidth, IslandHoverZone.ActualHeight);
+        if (hoverZoneBounds.Contains(hoverZoneRelative))
         {
             return IntPtr.Zero;
+        }
+
+        var islandRelative = Island.PointFromScreen(point);
+        var islandBounds = new Rect(0, 0, Island.ActualWidth, Island.ActualHeight);
+        if (islandBounds.Contains(islandRelative))
+        {
+            return IntPtr.Zero;
+        }
+
+        var topBarRelative = TopBar.PointFromScreen(point);
+        var topBarBounds = new Rect(0, 0, TopBar.ActualWidth, TopBar.ActualHeight);
+        if (topBarBounds.Contains(topBarRelative))
+        {
+            return IntPtr.Zero;
+        }
+
+        var dockRelative = DockBar.PointFromScreen(point);
+        var dockBounds = new Rect(0, 0, DockBar.ActualWidth, DockBar.ActualHeight);
+        if (dockBounds.Contains(dockRelative))
+        {
+            return IntPtr.Zero;
+        }
+
+        if (StartMenuPanel.Visibility == Visibility.Visible)
+        {
+            var startMenuRelative = StartMenuPanel.PointFromScreen(point);
+            var startMenuBounds = new Rect(0, 0, StartMenuPanel.ActualWidth, StartMenuPanel.ActualHeight);
+            if (startMenuBounds.Contains(startMenuRelative))
+            {
+                return IntPtr.Zero;
+            }
         }
 
         handled = true;
@@ -1457,8 +3401,14 @@ public partial class MainWindow : Window
             return;
         }
 
+        ShowClipboardHistory();
+    }
+
+    private void ShowClipboardHistory()
+    {
         if (_clipboardHistory.Count == 0)
         {
+            ShowUtility("Pano Gecmisi", "Henuz bir kayit yok", "C", 0, TimeSpan.FromSeconds(2));
             return;
         }
 
@@ -1494,7 +3444,9 @@ public partial class MainWindow : Window
             _ => (190d, 36d)
         };
 
+        PositionIslandForState(nextState, height);
         AnimateIsland(width, height, GetCornerRadius(nextState, height));
+        AnimateIslandFrame(nextState, width, height);
         TimerPanel.Visibility = nextState is IslandState.MediaExpanded && IsTimerActive ? Visibility.Visible : Visibility.Collapsed;
         SetView(MediaCompactView, nextState is IslandState.MediaCompact);
         SetView(MediaExpandedView, nextState is IslandState.MediaExpanded);
@@ -1524,7 +3476,30 @@ public partial class MainWindow : Window
         return _isCameraActive || _isMicrophoneActive ? 52d : 44d;
     }
 
-    private double GetCompactHeight() => _isMediaActive || IsTimerActive ? 30d : 22d;
+    private double GetCompactHeight() => _isMediaActive || IsTimerActive ? 30d : 24d;
+
+    private void PositionIslandForState(IslandState state, double height)
+    {
+        var topOffset = state is IslandState.MediaCompact
+            ? Math.Max(4d, (TopBarHeight - height) / 2d)
+            : 6d;
+
+        Island.Margin = new Thickness(0, topOffset, 0, 0);
+        IslandPocket.Margin = new Thickness(0, Math.Max(0d, topOffset - 4d), 0, 0);
+    }
+
+    private static double GetIslandFrameWidth(IslandState state, double islandWidth)
+    {
+        var horizontalBreathingRoom = state is IslandState.MediaCompact ? 38d : 64d;
+        return islandWidth + horizontalBreathingRoom;
+    }
+
+    private static double GetIslandFrameHeight(IslandState state, double islandHeight)
+    {
+        return state is IslandState.MediaCompact
+            ? TopBarHeight
+            : islandHeight + 18d;
+    }
 
     private double GetCornerRadius(IslandState state, double height)
     {
@@ -1615,6 +3590,7 @@ public partial class MainWindow : Window
         }
 
         PositionAtTopCenter();
+        RegisterAppBar();
     }
 
     private async void SwitchAudioOutputMenuItem_Click(object sender, RoutedEventArgs e)
@@ -1755,6 +3731,28 @@ public partial class MainWindow : Window
         Island.BeginAnimation(Border.CornerRadiusProperty, cornerAnimation);
     }
 
+    private void AnimateIslandFrame(IslandState state, double islandWidth, double islandHeight)
+    {
+        var ease = (IEasingFunction)Resources["IslandEase"];
+        var frameWidth = GetIslandFrameWidth(state, islandWidth);
+        var hoverHeight = GetIslandFrameHeight(state, islandHeight);
+        var pocketWidth = islandWidth + (state is IslandState.MediaCompact ? 18d : 28d);
+        var pocketHeight = islandHeight + (state is IslandState.MediaCompact ? 8d : 16d);
+        var pocketRadius = state is IslandState.MediaCompact ? pocketHeight / 2d : GetCornerRadius(state, islandHeight) + 8d;
+
+        IslandHoverZone.BeginAnimation(WidthProperty, new DoubleAnimation(frameWidth, TimeSpan.FromMilliseconds(260)) { EasingFunction = ease });
+        IslandHoverZone.BeginAnimation(HeightProperty, new DoubleAnimation(hoverHeight, TimeSpan.FromMilliseconds(260)) { EasingFunction = ease });
+        IslandBarSpacer.BeginAnimation(WidthProperty, new DoubleAnimation(frameWidth, TimeSpan.FromMilliseconds(260)) { EasingFunction = ease });
+        IslandPocket.BeginAnimation(WidthProperty, new DoubleAnimation(pocketWidth, TimeSpan.FromMilliseconds(260)) { EasingFunction = ease });
+        IslandPocket.BeginAnimation(HeightProperty, new DoubleAnimation(pocketHeight, TimeSpan.FromMilliseconds(260)) { EasingFunction = ease });
+        IslandPocket.BeginAnimation(Border.CornerRadiusProperty, new CornerRadiusAnimation
+        {
+            To = new CornerRadius(pocketRadius),
+            Duration = TimeSpan.FromMilliseconds(260),
+            EasingFunction = ease
+        });
+    }
+
     private static void SetView(UIElement view, bool isVisible)
     {
         view.Visibility = Visibility.Visible;
@@ -1804,6 +3802,57 @@ public partial class MainWindow : Window
     [DllImport("user32.dll")]
     private static extern bool IsIconic(IntPtr hWnd);
 
+    private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetWindow(IntPtr hWnd, uint uCmd);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    private static extern bool PostMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll", EntryPoint = "GetClassLongPtr")]
+    private static extern IntPtr GetClassLongPtr64(IntPtr hWnd, int nIndex);
+
+    [DllImport("user32.dll", EntryPoint = "GetClassLong")]
+    private static extern uint GetClassLong32(IntPtr hWnd, int nIndex);
+
+    private static IntPtr GetClassLongPtr(IntPtr hWnd, int nIndex)
+    {
+        return IntPtr.Size == 8
+            ? GetClassLongPtr64(hWnd, nIndex)
+            : new IntPtr(GetClassLong32(hWnd, nIndex));
+    }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool DestroyIcon(IntPtr hIcon);
+
+    [DllImport("shell32.dll", CharSet = CharSet.Auto)]
+    private static extern IntPtr SHGetFileInfo(string pszPath, uint dwFileAttributes, ref ShFileInfo psfi, uint cbFileInfo, uint uFlags);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr OpenProcess(uint desiredAccess, bool inheritHandle, uint processId);
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+    private static extern bool QueryFullProcessImageName(IntPtr process, int flags, System.Text.StringBuilder exeName, ref int size);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool CloseHandle(IntPtr handle);
+
     [DllImport("user32.dll")]
     private static extern bool GetWindowPlacement(IntPtr hWnd, ref WindowPlacement lpwndpl);
 
@@ -1812,6 +3861,9 @@ public partial class MainWindow : Window
 
     [DllImport("user32.dll", CharSet = CharSet.Auto)]
     private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MonitorInfo lpmi);
+
+    [DllImport("shell32.dll", CallingConvention = CallingConvention.StdCall)]
+    private static extern UIntPtr SHAppBarMessage(uint message, ref AppBarData data);
 }
 
 public enum IslandState
@@ -1825,6 +3877,30 @@ public enum IslandState
 
 public sealed record NotificationPreview(string AppName, string Message, ImageSource? Logo);
 
+public sealed record DockApp(
+    string Key,
+    IntPtr Handle,
+    string Title,
+    string? Path,
+    ImageSource? Icon,
+    bool IsActive,
+    bool IsRunning,
+    bool IsPinned);
+
+public sealed record LauncherApp(string Title, string Path, ImageSource? Icon);
+
+[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+public struct ShFileInfo
+{
+    public IntPtr IconHandle;
+    public int IconIndex;
+    public uint Attributes;
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+    public string DisplayName;
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 80)]
+    public string TypeName;
+}
+
 [StructLayout(LayoutKind.Sequential)]
 public struct NativeRect
 {
@@ -1832,6 +3908,26 @@ public struct NativeRect
     public int Top;
     public int Right;
     public int Bottom;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public struct AppBarData
+{
+    public int Size;
+    public IntPtr WindowHandle;
+    public uint CallbackMessage;
+    public uint Edge;
+    public NativeRect Rect;
+    public IntPtr Param;
+
+    public static AppBarData Create(IntPtr handle)
+    {
+        return new AppBarData
+        {
+            Size = Marshal.SizeOf<AppBarData>(),
+            WindowHandle = handle
+        };
+    }
 }
 
 [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]

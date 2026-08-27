@@ -49,7 +49,7 @@ public partial class TimerInputDialog : Window
         if (!double.TryParse(input, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var minutes) ||
             minutes is < 1 or > 240)
         {
-            ErrorText.Text = "1-240 arasi bir dakika yaz";
+            ErrorText.Text = "1–240 arasında bir dakika yaz";
             return;
         }
 

@@ -1,7 +1,7 @@
 <Window x:Class="WinDynamicIsland.SettingsDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Settings"
+        Title="Ayarlar"
         Width="360"
         Height="420"
         WindowStyle="None"
@@ -99,11 +99,11 @@
       </Grid.RowDefinitions>
 
       <StackPanel MouseLeftButtonDown="Header_MouseLeftButtonDown">
-        <TextBlock Text="Settings"
+        <TextBlock Text="Ayarlar"
                    Foreground="White"
                    FontSize="15"
                    FontWeight="SemiBold" />
-        <TextBlock Text="Island ozelliklerini ac/kapat"
+        <TextBlock Text="EMR UI özelliklerini düzenle"
                    Foreground="#9FFFFFFF"
                    FontSize="11"
                    Margin="0,4,0,0" />
@@ -115,18 +115,18 @@
                     HorizontalScrollBarVisibility="Disabled">
         <StackPanel>
           <CheckBox x:Name="StartWithWindowsCheckBox"
-                    Content="Start with Windows" />
+                    Content="Windows ile birlikte başlat" />
           <CheckBox x:Name="NotificationsCheckBox"
-                    Content="Notifications" />
+                    Content="Bildirimler" />
           <CheckBox x:Name="WeatherCheckBox"
-                    Content="Idle weather card" />
+                    Content="Boştayken hava durumu" />
           <CheckBox x:Name="ScreenshotPreviewCheckBox"
-                    Content="Screenshot preview" />
+                    Content="Ekran görüntüsü önizlemesi" />
           <CheckBox x:Name="TimerCheckBox"
-                    Content="Timer controls" />
+                    Content="Sayaç kontrolleri" />
           <CheckBox x:Name="SystemAlertsCheckBox"
-                    Content="System alerts" />
-          <TextBlock Text="Display"
+                    Content="Sistem uyarıları" />
+          <TextBlock Text="Monitör"
                      Foreground="#9FFFFFFF"
                      FontSize="11"
                      FontWeight="SemiBold"
@@ -146,7 +146,7 @@
         <Button Width="78"
                 Height="32"
                 Margin="0,0,8,0"
-                Content="Iptal"
+                Content="İptal"
                 Click="CancelButton_Click" />
         <Button Width="78"
                 Height="32"

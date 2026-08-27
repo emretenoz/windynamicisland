@@ -16,6 +16,10 @@ A lightweight Windows Dynamic Island-style WPF widget for media, notifications, 
 - Display picker for multi-monitor setups.
 - Modern context menu and settings panel.
 - Optional start with Windows.
+- Adaptive top bar with active-app color sampling, network, volume, clock, and calendar controls.
+- macOS-style dock with running/minimized apps, pinning, drag-to-reorder, and app actions.
+- Searchable launcher that discovers installed desktop, Store, Riot, and Steam apps.
+- Per-app launcher hiding for keeping the application list clean.
 
 ## Requirements
 

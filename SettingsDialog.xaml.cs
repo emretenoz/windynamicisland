@@ -18,7 +18,12 @@ public partial class SettingsDialog : Window
             ScreenshotPreviewEnabled = settings.ScreenshotPreviewEnabled,
             TimerEnabled = settings.TimerEnabled,
             SystemAlertsEnabled = settings.SystemAlertsEnabled,
-            DisplayIndex = settings.DisplayIndex
+            DisplayIndex = settings.DisplayIndex,
+            PinnedDockApps = settings.PinnedDockApps
+                .Select(app => new DockPinnedApp { Key = app.Key, Title = app.Title, Path = app.Path })
+                .ToList(),
+            DockAppOrder = settings.DockAppOrder.ToList(),
+            HiddenLauncherApps = settings.HiddenLauncherApps.ToList()
         };
         StartWithWindows = startWithWindows;
 
@@ -85,8 +90,8 @@ public partial class SettingsDialog : Window
         for (var i = 0; i < screens.Length; i++)
         {
             var screen = screens[i];
-            var primary = screen.Primary ? "primary" : "secondary";
-            DisplayComboBox.Items.Add($"Display {i + 1} ({primary}) {screen.Bounds.Width}x{screen.Bounds.Height}");
+            var primary = screen.Primary ? "ana" : "ikincil";
+            DisplayComboBox.Items.Add($"Monitör {i + 1} ({primary}) · {screen.Bounds.Width}x{screen.Bounds.Height}");
         }
 
         DisplayComboBox.SelectedIndex = Math.Clamp(Settings.DisplayIndex, 0, Math.Max(0, screens.Length - 1));

@@ -12,8 +12,6 @@
         ShowInTaskbar="False"
         Loaded="Window_Loaded"
         Closed="Window_Closed"
-        MouseEnter="Window_MouseEnter"
-        MouseLeave="Window_MouseLeave"
         MouseWheel="Window_MouseWheel">
   <Window.Resources>
     <CubicEase x:Key="IslandEase" EasingMode="EaseOut" />
@@ -127,6 +125,158 @@
         </Setter.Value>
       </Setter>
     </Style>
+    <Style x:Key="TopBarButtonStyle" TargetType="Button">
+      <Setter Property="Height" Value="30" />
+      <Setter Property="Padding" Value="10,0" />
+      <Setter Property="Margin" Value="1,0" />
+      <Setter Property="Foreground" Value="#EFFFFFFF" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="FontSize" Value="11.5" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="TopBarButtonRoot"
+                    Background="{TemplateBinding Background}"
+                    CornerRadius="7"
+                    Padding="{TemplateBinding Padding}">
+              <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="TopBarButtonRoot" Property="Background" Value="#24FFFFFF" />
+              </Trigger>
+              <Trigger Property="IsPressed" Value="True">
+                <Setter TargetName="TopBarButtonRoot" Property="Background" Value="#3A9D35C7" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="DockAppButtonStyle" TargetType="Button">
+      <Setter Property="Width" Value="44" />
+      <Setter Property="Height" Value="48" />
+      <Setter Property="Margin" Value="0,0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border Background="{TemplateBinding Background}"
+                    CornerRadius="10"
+                    Padding="{TemplateBinding Padding}">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Panel.ZIndex" Value="4" />
+                <Setter Property="Background" Value="#18FFFFFF" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="CalendarDayButtonStyle" TargetType="Button">
+      <Setter Property="Height" Value="38" />
+      <Setter Property="Margin" Value="2" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="DayRoot"
+                    Width="34"
+                    Height="34"
+                    Background="{TemplateBinding Background}"
+                    CornerRadius="17">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="DayRoot" Property="Background" Value="#28FFFFFF" />
+              </Trigger>
+              <Trigger Property="IsPressed" Value="True">
+                <Setter TargetName="DayRoot" Property="Opacity" Value="0.72" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="VolumeSliderStyle" TargetType="Slider">
+      <Setter Property="Height" Value="24" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Slider">
+            <Grid VerticalAlignment="Center">
+              <Track x:Name="PART_Track" Height="20">
+                <Track.DecreaseRepeatButton>
+                  <RepeatButton BorderThickness="0" IsTabStop="False">
+                    <RepeatButton.Template>
+                      <ControlTemplate TargetType="RepeatButton">
+                        <Border Height="4" Background="#42BDF5" CornerRadius="2" VerticalAlignment="Center" />
+                      </ControlTemplate>
+                    </RepeatButton.Template>
+                  </RepeatButton>
+                </Track.DecreaseRepeatButton>
+                <Track.Thumb>
+                  <Thumb Width="15" Height="15">
+                    <Thumb.Template>
+                      <ControlTemplate TargetType="Thumb">
+                        <Grid>
+                          <Ellipse Width="22" Height="22" Fill="#2942BDF5" />
+                          <Ellipse Width="12" Height="12" Fill="#42BDF5" />
+                        </Grid>
+                      </ControlTemplate>
+                    </Thumb.Template>
+                  </Thumb>
+                </Track.Thumb>
+                <Track.IncreaseRepeatButton>
+                  <RepeatButton BorderThickness="0" IsTabStop="False">
+                    <RepeatButton.Template>
+                      <ControlTemplate TargetType="RepeatButton">
+                        <Border Height="4" Background="#70FFFFFF" CornerRadius="2" VerticalAlignment="Center" />
+                      </ControlTemplate>
+                    </RepeatButton.Template>
+                  </RepeatButton>
+                </Track.IncreaseRepeatButton>
+              </Track>
+            </Grid>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="OutputDeviceButtonStyle" TargetType="Button">
+      <Setter Property="Height" Value="42" />
+      <Setter Property="Padding" Value="10,0" />
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="DeviceRoot" Background="{TemplateBinding Background}" CornerRadius="7" Padding="{TemplateBinding Padding}">
+              <ContentPresenter HorizontalAlignment="Stretch" VerticalAlignment="Center" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="DeviceRoot" Property="Background" Value="#22FFFFFF" />
+              </Trigger>
+              <Trigger Property="IsPressed" Value="True">
+                <Setter TargetName="DeviceRoot" Property="Background" Value="#35FFFFFF" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
     <Storyboard x:Key="MediaPlayingStoryboard" RepeatBehavior="Forever" AutoReverse="True">
       <DoubleAnimation Storyboard.TargetName="CompactBarOne"
                        Storyboard.TargetProperty="Height"
@@ -161,53 +311,486 @@
   </Window.Resources>
 
   <Grid Background="Transparent">
-    <Border x:Name="Island"
-            Width="58"
-            Height="24"
-            HorizontalAlignment="Center"
+    <Border x:Name="TopBar"
+            Height="38"
             VerticalAlignment="Top"
-            Margin="0,8,0,0"
+            Background="#F20A0A0D"
+            BorderBrush="#8A9D35C7"
+            BorderThickness="0,0,0,1">
+      <Grid Margin="8,0">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <Border x:Name="IslandBarSpacer"
+                Grid.Column="1"
+                Width="92"
+                Height="38"
+                Background="Transparent" />
+
+        <Grid Grid.Column="0">
+          <Button Style="{StaticResource TopBarButtonStyle}"
+                  HorizontalAlignment="Stretch"
+                  HorizontalContentAlignment="Stretch"
+                  Padding="5,0"
+                  ToolTip="EMR UI ayarlarını aç"
+                  Click="TopBarHomeButton_Click">
+            <Grid VerticalAlignment="Center">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <Border x:Name="TopBarBrandBadge"
+                      Grid.Column="0"
+                      Width="18"
+                      Height="18"
+                      CornerRadius="5"
+                      Background="#18FFFFFF"
+                      BorderBrush="#20FFFFFF"
+                      BorderThickness="1">
+                <TextBlock x:Name="TopBarBrandMark"
+                           Text="◆"
+                           Foreground="#D65AE8"
+                           FontSize="9"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center" />
+              </Border>
+              <TextBlock Grid.Column="1"
+                         Text="EMR UI"
+                         FontWeight="SemiBold"
+                         Margin="7,0,0,0"
+                         VerticalAlignment="Center" />
+              <TextBlock Grid.Column="2"
+                         Text="/"
+                         Foreground="#50FFFFFF"
+                         FontSize="12"
+                         Margin="9,0,8,0"
+                         VerticalAlignment="Center" />
+              <TextBlock x:Name="TopBarActivityText"
+                         Grid.Column="3"
+                         Text="Dynamic Island"
+                         Foreground="#BFFFFFFF"
+                         FontSize="11"
+                         TextTrimming="CharacterEllipsis"
+                         VerticalAlignment="Center" />
+            </Grid>
+          </Button>
+        </Grid>
+
+        <StackPanel Grid.Column="2"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Center">
+          <Button Style="{StaticResource TopBarButtonStyle}"
+                  Padding="8,0"
+                  ToolTip="Pano geçmişi"
+                  Click="TopBarClipboardButton_Click">
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Text="&#xE8C8;" FontFamily="Segoe MDL2 Assets" FontSize="12" VerticalAlignment="Center" />
+              <TextBlock Text="Pano" FontSize="10.5" Margin="5,0,0,0" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+          <Button Style="{StaticResource TopBarButtonStyle}"
+                  Padding="8,0"
+                  ToolTip="5 dakikalık sayaç başlat"
+                  Click="TopBarTimerButton_Click">
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Text="&#xE916;" FontFamily="Segoe MDL2 Assets" FontSize="12" VerticalAlignment="Center" />
+              <TextBlock Text="5 dk" FontSize="10.5" Margin="5,0,0,0" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+          <Button x:Name="TopBarNetworkButton" Style="{StaticResource TopBarButtonStyle}" ToolTip="Ağ ayarlarını aç" Click="TopBarNetworkButton_Click">
+            <TextBlock x:Name="TopBarNetworkText" Text="&#xE701;" FontFamily="Segoe MDL2 Assets" FontSize="14" />
+          </Button>
+          <Button x:Name="TopBarVolumeButton" Style="{StaticResource TopBarButtonStyle}" Padding="9,0" ToolTip="Ses düzeyini aç" Click="TopBarVolumeButton_Click">
+            <Border Background="#12FFFFFF" CornerRadius="10" Padding="7,3">
+              <StackPanel Orientation="Horizontal">
+                <TextBlock x:Name="TopBarVolumeIcon"
+                           Text="&#xE767;"
+                           FontFamily="Segoe MDL2 Assets"
+                           FontSize="13"
+                           Foreground="#EFFFFFFF"
+                           VerticalAlignment="Center" />
+                <TextBlock x:Name="TopBarVolumeText"
+                           Text="--%"
+                           Foreground="#BFFFFFFF"
+                           FontSize="10"
+                           FontWeight="SemiBold"
+                           Margin="6,0,0,0"
+                           VerticalAlignment="Center" />
+              </StackPanel>
+            </Border>
+          </Button>
+          <Button x:Name="TopBarClockButton" Style="{StaticResource TopBarButtonStyle}" ToolTip="Takvim ve saati aç" Click="TopBarClockButton_Click">
+            <TextBlock x:Name="TopBarClockText" Text="00:00" FontWeight="SemiBold" />
+          </Button>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <Border x:Name="DockBar"
+            MinWidth="54"
+            MaxWidth="820"
+            Height="58"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Bottom"
+            Margin="0,0,0,2"
+            Background="#CC151518"
+            BorderBrush="#30FFFFFF"
+            BorderThickness="1"
             CornerRadius="18"
-            Background="#EE000000"
-            Cursor="Hand"
-            ClipToBounds="True"
-            Opacity="1"
-            RenderTransformOrigin="0.5,0.5"
-            MouseLeftButtonUp="Island_MouseLeftButtonUp">
+            Padding="6,5">
+      <Border.Effect>
+        <DropShadowEffect BlurRadius="18" ShadowDepth="3" Opacity="0.38" Color="Black" />
+      </Border.Effect>
+      <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+        <Button x:Name="DockLauncherButton"
+                Style="{StaticResource DockAppButtonStyle}"
+                Width="40"
+                ToolTip="Uygulamaları aç"
+                Click="DockLauncherButton_Click">
+          <Grid Width="34" Height="40">
+            <Border Width="32"
+                    Height="32"
+                    CornerRadius="10"
+                    Background="#24FFFFFF"
+                    BorderBrush="#24FFFFFF"
+                    BorderThickness="1"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center">
+              <TextBlock x:Name="DockLauncherMark"
+                         Text="&#xE80F;"
+                         FontFamily="Segoe MDL2 Assets"
+                         Foreground="#D65AE8"
+                         FontSize="17"
+                         HorizontalAlignment="Center"
+                         VerticalAlignment="Center" />
+            </Border>
+          </Grid>
+        </Button>
+        <Border Width="1"
+                Height="30"
+                Background="#22FFFFFF"
+                Margin="5,0,6,0" />
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                      VerticalScrollBarVisibility="Disabled"
+                      CanContentScroll="False">
+          <StackPanel x:Name="DockAppsPanel"
+                      Orientation="Horizontal"
+                      VerticalAlignment="Center" />
+        </ScrollViewer>
+      </StackPanel>
+    </Border>
+
+    <Border x:Name="StartMenuPanel"
+            Width="560"
+            Height="430"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Bottom"
+            Margin="0,0,0,72"
+            Background="#F217171A"
+            BorderBrush="#32FFFFFF"
+            BorderThickness="1"
+            CornerRadius="18"
+            Padding="16"
+            Visibility="Collapsed">
+      <Border.Effect>
+        <DropShadowEffect BlurRadius="28" ShadowDepth="5" Opacity="0.55" Color="Black" />
+      </Border.Effect>
+      <Grid>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="42" />
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <Border Background="#141414"
+                BorderBrush="#22FFFFFF"
+                BorderThickness="1"
+                CornerRadius="13"
+                Padding="12,0">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="24" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Text="&#xE721;"
+                       FontFamily="Segoe MDL2 Assets"
+                       Foreground="#42BDF5"
+                       FontSize="15"
+                       VerticalAlignment="Center" />
+            <TextBox x:Name="StartSearchBox"
+                     Grid.Column="1"
+                     Background="Transparent"
+                     BorderThickness="0"
+                     Foreground="White"
+                     CaretBrush="White"
+                     FontSize="13"
+                     ToolTip="Uygulama ara"
+                     VerticalContentAlignment="Center"
+                     TextChanged="StartSearchBox_TextChanged"
+                     KeyDown="StartSearchBox_KeyDown" />
+          </Grid>
+        </Border>
+
+        <TextBlock Grid.Row="1"
+                   Text="Sabitlenenler"
+                   Foreground="#DFFFFFFF"
+                   FontSize="13"
+                   FontWeight="SemiBold"
+                   Margin="4,18,0,10" />
+
+        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+          <StackPanel>
+            <UniformGrid x:Name="LauncherPinnedPanel"
+                         Columns="6"
+                         Margin="0,0,0,18" />
+            <TextBlock Text="Açık uygulamalar"
+                       Foreground="#9FFFFFFF"
+                       FontSize="12"
+                       FontWeight="SemiBold"
+                       Margin="4,0,0,10" />
+            <UniformGrid x:Name="LauncherRunningPanel"
+                         Columns="6"
+                         Margin="0,0,0,18" />
+            <TextBlock Text="Tüm uygulamalar"
+                       Foreground="#9FFFFFFF"
+                       FontSize="12"
+                       FontWeight="SemiBold"
+                       Margin="4,0,0,10" />
+            <UniformGrid x:Name="LauncherInstalledPanel"
+                         Columns="6" />
+          </StackPanel>
+        </ScrollViewer>
+      </Grid>
+    </Border>
+
+    <Popup x:Name="CalendarPopup"
+           PlacementTarget="{Binding ElementName=TopBarClockButton}"
+           Placement="Bottom"
+           HorizontalOffset="-264"
+           VerticalOffset="6"
+           AllowsTransparency="True"
+           StaysOpen="False"
+           PopupAnimation="Fade"
+           Opened="CalendarPopup_Opened">
+      <Border Width="330"
+              Background="#FA202023"
+              BorderBrush="#32FFFFFF"
+              BorderThickness="1"
+              CornerRadius="14"
+              Padding="16">
+        <Border.Effect>
+          <DropShadowEffect BlurRadius="22" ShadowDepth="5" Opacity="0.55" Color="Black" />
+        </Border.Effect>
+        <Grid>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="1" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+          </Grid.RowDefinitions>
+
+          <Grid Margin="2,0,2,14">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel>
+              <TextBlock x:Name="CalendarTodayText" Text="27 Ağustos Perşembe" Foreground="White" FontSize="13" />
+              <TextBlock Text="Bugün" Foreground="#7FFFFFFF" FontSize="10" Margin="0,4,0,0" />
+            </StackPanel>
+            <TextBlock x:Name="CalendarClockText"
+                       Grid.Column="1"
+                       Text="15:08"
+                       Foreground="White"
+                       FontSize="25"
+                       FontWeight="Light"
+                       VerticalAlignment="Center" />
+          </Grid>
+
+          <Border Grid.Row="1" Background="#20FFFFFF" />
+
+          <Grid Grid.Row="2" Margin="0,13,0,12">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="34" />
+              <ColumnDefinition Width="34" />
+            </Grid.ColumnDefinitions>
+            <TextBlock x:Name="CalendarMonthText" Text="Ağustos 2026" Foreground="White" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" />
+            <Button Grid.Column="1" Style="{StaticResource TopBarButtonStyle}" Padding="0" Content="‹" FontSize="20" ToolTip="Önceki ay" Click="CalendarPreviousMonth_Click" />
+            <Button Grid.Column="2" Style="{StaticResource TopBarButtonStyle}" Padding="0" Content="›" FontSize="20" ToolTip="Sonraki ay" Click="CalendarNextMonth_Click" />
+          </Grid>
+
+          <UniformGrid Grid.Row="3" Columns="7" Rows="1" Margin="0,0,0,4">
+            <TextBlock Text="Pt" Foreground="#BFFFFFFF" FontSize="11" HorizontalAlignment="Center" />
+            <TextBlock Text="Sa" Foreground="#BFFFFFFF" FontSize="11" HorizontalAlignment="Center" />
+            <TextBlock Text="Ça" Foreground="#BFFFFFFF" FontSize="11" HorizontalAlignment="Center" />
+            <TextBlock Text="Pe" Foreground="#BFFFFFFF" FontSize="11" HorizontalAlignment="Center" />
+            <TextBlock Text="Cu" Foreground="#BFFFFFFF" FontSize="11" HorizontalAlignment="Center" />
+            <TextBlock Text="Ct" Foreground="#BFFFFFFF" FontSize="11" HorizontalAlignment="Center" />
+            <TextBlock Text="Pa" Foreground="#BFFFFFFF" FontSize="11" HorizontalAlignment="Center" />
+          </UniformGrid>
+
+          <UniformGrid x:Name="CalendarDaysGrid" Grid.Row="4" Columns="7" Rows="6" />
+        </Grid>
+      </Border>
+    </Popup>
+
+    <Popup x:Name="VolumePopup"
+           PlacementTarget="{Binding ElementName=TopBarVolumeButton}"
+           Placement="Bottom"
+           HorizontalOffset="-216"
+           VerticalOffset="6"
+           AllowsTransparency="True"
+           StaysOpen="False"
+           PopupAnimation="Fade"
+           Opened="VolumePopup_Opened">
+      <Border Width="310"
+              Height="58"
+              Background="#FA252527"
+              BorderBrush="#32FFFFFF"
+              BorderThickness="1"
+              CornerRadius="12"
+              Padding="12,8">
+        <Border.Effect>
+          <DropShadowEffect BlurRadius="18" ShadowDepth="4" Opacity="0.5" Color="Black" />
+        </Border.Effect>
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="28" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="46" />
+          </Grid.ColumnDefinitions>
+          <TextBlock x:Name="VolumePopupIcon"
+                     Text="&#xE995;"
+                     FontFamily="Segoe MDL2 Assets"
+                     FontSize="16"
+                     Foreground="White"
+                     VerticalAlignment="Center" />
+          <Slider x:Name="VolumeSlider"
+                  Grid.Column="1"
+                  Style="{StaticResource VolumeSliderStyle}"
+                  Minimum="0"
+                  Maximum="100"
+                  ValueChanged="VolumeSlider_ValueChanged" />
+          <Button x:Name="VolumeOutputButton"
+                  Grid.Column="2"
+                  Style="{StaticResource TopBarButtonStyle}"
+                  Padding="4,0"
+                  ToolTip="Ses çıkışını değiştir"
+                  Click="VolumeOutputButton_Click">
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Text="&#xE7F5;" FontFamily="Segoe MDL2 Assets" FontSize="14" />
+              <TextBlock Text="›" FontSize="18" Margin="4,-1,0,0" />
+            </StackPanel>
+          </Button>
+        </Grid>
+      </Border>
+    </Popup>
+
+    <Popup x:Name="OutputDevicePopup"
+           PlacementTarget="{Binding ElementName=TopBarVolumeButton}"
+           Placement="Bottom"
+           HorizontalOffset="-246"
+           VerticalOffset="6"
+           AllowsTransparency="True"
+           StaysOpen="False"
+           PopupAnimation="Fade">
+      <Border Width="345"
+              Background="#FA252527"
+              BorderBrush="#32FFFFFF"
+              BorderThickness="1"
+              CornerRadius="12"
+              Padding="8">
+        <Border.Effect>
+          <DropShadowEffect BlurRadius="18" ShadowDepth="4" Opacity="0.5" Color="Black" />
+        </Border.Effect>
+        <Grid>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="1" />
+            <RowDefinition Height="Auto" />
+          </Grid.RowDefinitions>
+          <TextBlock Text="Çıkış cihazı" Foreground="White" FontSize="13" FontWeight="SemiBold" Margin="8,5,8,11" />
+          <Border Grid.Row="1" Background="#20FFFFFF" />
+          <ScrollViewer Grid.Row="2" MaxHeight="260" VerticalScrollBarVisibility="Auto">
+            <StackPanel x:Name="OutputDevicesPanel" Margin="0,6,0,0" />
+          </ScrollViewer>
+        </Grid>
+      </Border>
+    </Popup>
+
+    <Grid x:Name="IslandHoverZone"
+          Width="92"
+          Height="38"
+          HorizontalAlignment="Center"
+          VerticalAlignment="Top"
+          Background="Transparent"
+          MouseEnter="Window_MouseEnter"
+          MouseLeave="Window_MouseLeave">
+      <Border x:Name="IslandPocket"
+              Width="76"
+              Height="32"
+              HorizontalAlignment="Center"
+              VerticalAlignment="Top"
+              Margin="0,3,0,0"
+              CornerRadius="18"
+              Background="Transparent"
+              BorderBrush="Transparent"
+              BorderThickness="1"
+              IsHitTestVisible="False" />
+      <Border x:Name="Island"
+              Width="58"
+              Height="24"
+              HorizontalAlignment="Center"
+              VerticalAlignment="Top"
+              Margin="0,7,0,0"
+              CornerRadius="18"
+              Background="#EE000000"
+              Cursor="Hand"
+              ClipToBounds="True"
+              Opacity="1"
+              RenderTransformOrigin="0.5,0.5"
+              MouseLeftButtonUp="Island_MouseLeftButtonUp">
       <Border.RenderTransform>
         <ScaleTransform x:Name="IslandScale" ScaleX="1" ScaleY="1" />
       </Border.RenderTransform>
       <Border.ContextMenu>
         <ContextMenu>
           <MenuItem x:Name="StartupMenuItem"
-                    Header="Start with Windows"
+                    Header="Windows ile birlikte başlat"
                     IsCheckable="True"
                     Click="StartupMenuItem_Click" />
-          <MenuItem Header="Notification Settings"
+          <MenuItem Header="Bildirim ayarları"
                     Click="NotificationSettingsMenuItem_Click" />
-          <MenuItem Header="Settings"
+          <MenuItem Header="Ayarlar"
                     Click="SettingsMenuItem_Click" />
           <Separator />
-          <MenuItem Header="Switch Audio Output"
+          <MenuItem Header="Ses çıkışını değiştir"
                     Click="SwitchAudioOutputMenuItem_Click" />
-          <MenuItem Header="Timer 5 min"
+          <MenuItem Header="5 dakikalık sayaç"
                     Click="TimerFiveMenuItem_Click" />
-          <MenuItem Header="Timer 10 min"
+          <MenuItem Header="10 dakikalık sayaç"
                     Click="TimerTenMenuItem_Click" />
-          <MenuItem Header="Timer 15 min"
+          <MenuItem Header="15 dakikalık sayaç"
                     Click="TimerFifteenMenuItem_Click" />
-          <MenuItem Header="Timer 30 min"
+          <MenuItem Header="30 dakikalık sayaç"
                     Click="TimerThirtyMenuItem_Click" />
-          <MenuItem Header="Timer 45 min"
+          <MenuItem Header="45 dakikalık sayaç"
                     Click="TimerFortyFiveMenuItem_Click" />
-          <MenuItem Header="Timer 60 min"
+          <MenuItem Header="60 dakikalık sayaç"
                     Click="TimerSixtyMenuItem_Click" />
-          <MenuItem Header="Custom Timer..."
+          <MenuItem Header="Özel sayaç..."
                     Click="TimerCustomMenuItem_Click" />
-          <MenuItem Header="Stop Timer"
+          <MenuItem Header="Sayacı durdur"
                     Click="TimerStopMenuItem_Click" />
           <Separator />
-          <MenuItem Header="Exit"
+          <MenuItem Header="Çıkış"
                     Click="ExitMenuItem_Click" />
         </ContextMenu>
       </Border.ContextMenu>
@@ -506,7 +1089,8 @@
           </Grid>
         </Grid>
       </Grid>
-    </Border>
+      </Border>
+    </Grid>
 
   </Grid>
 </Window>
